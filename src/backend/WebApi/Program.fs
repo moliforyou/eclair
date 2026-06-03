@@ -36,6 +36,8 @@ module Program =
         builder.Services.AddSingleton<IMessageBus> (fun _ -> RedisBus (redisConn) :> IMessageBus)
         |> ignore
 
+        builder.Services.AddHostedService<SignalRMoveBroadcaster> () |> ignore
+
         let app = builder.Build ()
 
         app.UseRouting () |> ignore
@@ -47,6 +49,8 @@ module Program =
         let falcoEndpoints = [
             post "/api/matchmaking" (Handlers.matchmakingHandler bus)
             post "/api/games/{id}/move" (Handlers.playMoveHandler repo bus)
+            post "/api/games/{id}/create" (Handlers.createGameHandler repo bus)
+            get "/api/games/{id}" (Handlers.getGameHandler repo)
         ]
 
         app.UseFalco (falcoEndpoints) |> ignore

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { Chess } from 'chess.js'
+import { squareToCoords } from '../lib/utils'
 
 describe('Chess Core Engine Tests', () => {
   test('should initialize with standard FEN layout', () => {
@@ -61,5 +62,12 @@ describe('Chess Core Engine Tests', () => {
     expect(game.inCheck()).toBe(true)
     expect(game.isCheckmate()).toBe(true)
     expect(game.isGameOver()).toBe(true)
+  })
+
+  test('should map algebraic squares to matrix coordinates correctly', () => {
+    expect(squareToCoords('e2')).toEqual({ col: 4, row: 1 })
+    expect(squareToCoords('e4')).toEqual({ col: 4, row: 3 })
+    expect(squareToCoords('a1')).toEqual({ col: 0, row: 0 })
+    expect(squareToCoords('h8')).toEqual({ col: 7, row: 7 })
   })
 })

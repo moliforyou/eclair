@@ -11,6 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
     "@tailwindcss/vite": "^4.3.0",
     "chess.js": "^1.4.0",
     "class-variance-authority": "^0.7.1",

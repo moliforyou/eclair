@@ -4,6 +4,8 @@ import { Chessboard } from './components/Chessboard'
 import { Button } from './components/ui/Button'
 import { Card, CardHeader, CardTitle } from './components/ui/Card'
 import { Input } from './components/ui/Input'
+import { squareToCoords } from './lib/utils'
+import { HubConnectionBuilder, HubConnection } from '@microsoft/signalr'
 import {
   Activity,
   Cpu,
@@ -12,7 +14,9 @@ import {
   RefreshCw,
   Volume2,
   VolumeX,
-  Grid
+  Grid,
+  Link2,
+  User
 } from 'lucide-react'
 
 interface MoveRecord {
@@ -24,6 +28,10 @@ interface MoveRecord {
 }
 
 function App() {
+  const [gameId, setGameId] = useState('lobby-1')
+  const [playerId, setPlayerId] = useState(() => 'player_' + Math.floor(Math.random() * 1000))
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
+  
   // Fresh standard game setup
   const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
   const [game, setGame] = useState(() => new Chess())
@@ -33,9 +41,107 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [latency, setLatency] = useState(12)
   const [hashrate, setHashrate] = useState(2450)
+  
   const ledgerEndRef = useRef<HTMLDivElement>(null)
+  const connectionRef = useRef<HubConnection | null>(null)
 
-  // Simulate network tick metrics
+  // Sync state and establish SignalR connection when gameId or playerId changes
+  useEffect(() => {
+    let isMounted = true
+
+    // Helper to update state from a FEN string
+    const updateGameState = (newFen: string) => {
+      setFen(newFen)
+      const localGame = new Chess(newFen)
+      setGame(localGame)
+
+      const history = localGame.history()
+      const records: MoveRecord[] = []
+      for (let i = 0; i < history.length; i += 2) {
+        records.push({
+          num: Math.floor(i / 2) + 1,
+          white: history[i],
+          black: history[i + 1] || undefined,
+          whiteTelemetry: `eval: +0.15 | t: 3ms`, // Default telemetry placeholder
+          blackTelemetry: history[i + 1] ? `eval: -0.10 | t: 4ms` : undefined,
+        })
+      }
+      setMoves(records)
+    }
+
+    // 1. Initial HTTP sync with database
+    const syncGame = async () => {
+      try {
+        const getRes = await fetch(`/api/games/${gameId}`)
+        if (getRes.status === 404) {
+          // Game does not exist yet, call create endpoint to initialize it in Postgres
+          const createRes = await fetch(`/api/games/${gameId}/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ WhitePlayerId: playerId, BlackPlayerId: 'computer' })
+          })
+          if (createRes.ok) {
+            const freshRes = await fetch(`/api/games/${gameId}`)
+            if (freshRes.ok && isMounted) {
+              const data = await freshRes.json()
+              updateGameState(data.fen)
+            }
+          }
+        } else if (getRes.ok && isMounted) {
+          const data = await getRes.json()
+          updateGameState(data.fen)
+        }
+      } catch (err) {
+        console.error('Failed to sync game state with backend:', err)
+      }
+    }
+
+    syncGame()
+
+    // 2. Establish SignalR Connection
+    setTimeout(() => {
+      if (isMounted) {
+        setConnectionStatus('connecting')
+      }
+    }, 0)
+
+    const connection = new HubConnectionBuilder()
+      .withUrl('/hubs/game')
+      .withAutomaticReconnect()
+      .build()
+
+    connection.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string }) => {
+      if (isMounted) {
+        // Received real-time move broadcast from backend!
+        updateGameState(data.fen)
+      }
+    })
+
+    connection.start()
+      .then(() => {
+        if (!isMounted) {
+          connection.stop()
+          return
+        }
+        setConnectionStatus('connected')
+        connection.invoke('JoinGame', gameId)
+      })
+      .catch((err) => {
+        console.error('SignalR Hub Connection Error:', err)
+        if (isMounted) setConnectionStatus('disconnected')
+      })
+
+    connectionRef.current = connection
+
+    return () => {
+      isMounted = false
+      if (connectionRef.current) {
+        connectionRef.current.stop()
+      }
+    }
+  }, [gameId, playerId])
+
+  // Simulate telemetry latency metrics
   useEffect(() => {
     const timer = setInterval(() => {
       setLatency(prev => {
@@ -62,18 +168,17 @@ function App() {
     return `eval: ${sign}${ev} | t: ${time}ms`
   }
 
-  // Handle board move updates
-  const handleBoardMove = (newFen: string) => {
+  // Handle board move updates (with client prediction + HTTP server push)
+  const handleBoardMove = async (newFen: string, moveDetails?: { from: string; to: string; sanitized: string }) => {
+    if (!moveDetails) return
+
+    // 1. Client prediction: instantly display state change locally
     setFen(newFen)
-    
-    // Sync current instance
     const localGame = new Chess(newFen)
     setGame(localGame)
 
-    // Reconstruct ledger list
     const history = localGame.history()
     const records: MoveRecord[] = []
-    
     for (let i = 0; i < history.length; i += 2) {
       records.push({
         num: Math.floor(i / 2) + 1,
@@ -85,20 +190,78 @@ function App() {
     }
     setMoves(records)
     setCommandError(null)
+
+    // 2. Push move to server
+    const fromCoords = squareToCoords(moveDetails.from)
+    const toCoords = squareToCoords(moveDetails.to)
+
+    try {
+      const res = await fetch(`/api/games/${gameId}/move`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': playerId
+        },
+        body: JSON.stringify({
+          FromRow: fromCoords.row,
+          FromCol: fromCoords.col,
+          ToRow: toCoords.row,
+          ToCol: toCoords.col,
+          Promotion: 'Q' // Auto-promote to Queen for UI simplicity
+        })
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        setCommandError(errorData.Error || 'Move rejected by server')
+        
+        // Rollback: Fetch current state from server
+        const syncRes = await fetch(`/api/games/${gameId}`)
+        if (syncRes.ok) {
+          const data = await syncRes.json()
+          setFen(data.fen)
+          const syncGameInstance = new Chess(data.fen)
+          setGame(syncGameInstance)
+        }
+        setTimeout(() => setCommandError(null), 4000)
+      }
+    } catch (err) {
+      console.error('Failed to submit move:', err)
+      setCommandError('Network error: failed to submit move to server')
+      
+      // Rollback
+      const syncRes = await fetch(`/api/games/${gameId}`)
+      if (syncRes.ok) {
+        const data = await syncRes.json()
+        setFen(data.fen)
+        const syncGameInstance = new Chess(data.fen)
+        setGame(syncGameInstance)
+      }
+      setTimeout(() => setCommandError(null), 4000)
+    }
   }
 
-  // Restart match
-  const handleRestart = () => {
-    const fresh = new Chess()
-    setGame(fresh)
-    setFen(fresh.fen())
-    setMoves([])
-    setCommand('')
-    setCommandError(null)
+  // Restart match (calls backend recreate to reset state in Postgres)
+  const handleRestart = async () => {
+    try {
+      const res = await fetch(`/api/games/${gameId}/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ WhitePlayerId: playerId, BlackPlayerId: 'computer' })
+      })
+      if (res.ok) {
+        setCommand('')
+        setCommandError(null)
+      } else {
+        console.error('Failed to restart match on server')
+      }
+    } catch (err) {
+      console.error('Error restarting match:', err)
+    }
   }
 
   // Command input handler (Algebraic chess terminal commands, e.g. e4, Nf3)
-  const handleSendCommand = (e: React.FormEvent) => {
+  const handleSendCommand = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!command.trim()) return
 
@@ -110,12 +273,11 @@ function App() {
       const result = tempGame.move(sanitizedCmd)
       
       if (result) {
-        // Valid move! Apply to actual state
+        // Valid move predicted! Apply locally
         const nextFen = tempGame.fen()
         setFen(nextFen)
         setGame(tempGame)
 
-        // Update history log
         const history = tempGame.history()
         const records: MoveRecord[] = []
         for (let i = 0; i < history.length; i += 2) {
@@ -130,16 +292,49 @@ function App() {
         setMoves(records)
         setCommand('')
         setCommandError(null)
+
+        // Convert algebraic letters/numbers to matrix rows and columns
+        const fromCoords = squareToCoords(result.from)
+        const toCoords = squareToCoords(result.to)
+
+        // Submit move to backend
+        const res = await fetch(`/api/games/${gameId}/move`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-Id': playerId
+          },
+          body: JSON.stringify({
+            FromRow: fromCoords.row,
+            FromCol: fromCoords.col,
+            ToRow: toCoords.row,
+            ToCol: toCoords.col,
+            Promotion: result.promotion ? result.promotion.toUpperCase() : ''
+          })
+        })
+
+        if (!res.ok) {
+          const errorData = await res.json()
+          setCommandError(errorData.Error || 'Move rejected by server')
+          
+          // Rollback
+          const syncRes = await fetch(`/api/games/${gameId}`)
+          if (syncRes.ok) {
+            const data = await syncRes.json()
+            setFen(data.fen)
+            setGame(new Chess(data.fen))
+          }
+          setTimeout(() => setCommandError(null), 4000)
+        }
       }
     } catch {
       setCommandError(`INVALID ENGINE COMMAND: "${sanitizedCmd}" is not a valid algebraic move. Try "e4", "Nf3", "O-O".`)
-      // Clear error alert after 4 seconds
       setTimeout(() => setCommandError(null), 4000)
     }
   }
 
   return (
-    <div className="relative min-h-screen bg-void text-pure-light flex flex-col items-center select-none overflow-hidden">
+    <div className="relative min-h-screen bg-void text-pure-light flex flex-col items-center select-none overflow-hidden font-body">
       
       {/* Background Ambience elements */}
       <div className="absolute inset-0 bg-grid-pattern z-0 opacity-40" />
@@ -164,7 +359,7 @@ function App() {
                 ECLAIR<span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent ml-1">CORE</span>
               </span>
               <span className="font-mono text-[9px] tracking-widest text-stardust/60 uppercase">
-                Chess Platform
+                Chess Platform Terminal
               </span>
             </div>
           </div>
@@ -172,11 +367,32 @@ function App() {
           {/* Glowing Status badge */}
           <div className="flex items-center gap-6">
             <div className="hidden md:flex items-center gap-2 px-3 py-1 border border-pure-light/15 rounded-full bg-matter/60 font-mono text-[10px]">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-gold"></span>
-              </span>
-              <span className="text-stardust uppercase">ENGINE LINK: OK</span>
+              {connectionStatus === 'connected' && (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-gold"></span>
+                  </span>
+                  <span className="text-stardust uppercase">SECURE ENGINE LINK: OK</span>
+                </>
+              )}
+              {connectionStatus === 'connecting' && (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-btc-orange opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-btc-orange animate-pulse"></span>
+                  </span>
+                  <span className="text-btc-orange uppercase">ESTABLISHING LINK...</span>
+                </>
+              )}
+              {connectionStatus === 'disconnected' && (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                  </span>
+                  <span className="text-red-500 uppercase">ENGINE DISCONNECTED</span>
+                </>
+              )}
             </div>
 
             {/* Audio Toggle */}
@@ -198,14 +414,46 @@ function App() {
         <div className="text-center md:text-left flex flex-col md:flex-row md:items-end justify-between border-b border-pure-light/5 pb-4">
           <div>
             <h1 className="font-heading font-bold text-3xl md:text-5xl tracking-tight leading-tight m-0 text-pure-light">
-              <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Eclair Chess</span>
+              Secure Neural <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Chess Core</span>
             </h1>
+            <p className="font-body text-sm md:text-base text-stardust mt-1">
+              Zero-latency client predicted move validation. Enter keyboard algebraic commands or select pieces.
+            </p>
           </div>
           <div className="flex gap-2 mt-4 md:mt-0 justify-center">
             <Button variant="outline" size="sm" onClick={handleRestart} className="gap-2">
               <RefreshCw size={13} /> Reset Engine
             </Button>
           </div>
+        </div>
+
+        {/* Connection Setup Dashboard Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card variant="glass" className="p-4 flex flex-col md:flex-row gap-4 items-center" hoverEffect={false}>
+            <div className="flex items-center gap-3 text-btc-orange font-mono">
+              <Link2 size={16} />
+              <span className="text-xs uppercase tracking-wider text-stardust">Game ID:</span>
+            </div>
+            <Input
+              value={gameId}
+              onChange={(e) => setGameId(e.target.value.toLowerCase())}
+              placeholder="Enter Game Match ID"
+              className="h-9 text-xs"
+            />
+          </Card>
+
+          <Card variant="glass" className="p-4 flex flex-col md:flex-row gap-4 items-center" hoverEffect={false}>
+            <div className="flex items-center gap-3 text-gold font-mono">
+              <User size={16} />
+              <span className="text-xs uppercase tracking-wider text-stardust">Player ID:</span>
+            </div>
+            <Input
+              value={playerId}
+              onChange={(e) => setPlayerId(e.target.value)}
+              placeholder="Enter Player User ID"
+              className="h-9 text-xs"
+            />
+          </Card>
         </div>
 
         {/* Dynamic Column Split */}
@@ -266,6 +514,7 @@ function App() {
                     <Activity size={14} />
                   </div>
                 </div>
+                <div className="text-[9px] font-mono text-stardust/60 mt-2">Zero-latency Client Prediction Active</div>
               </Card>
 
               <Card variant="glass" className="p-4" hoverEffect>
@@ -278,6 +527,7 @@ function App() {
                     <Cpu size={14} />
                   </div>
                 </div>
+                <div className="text-[9px] font-mono text-stardust/60 mt-2">chess.js local thread active</div>
               </Card>
             </div>
 
@@ -286,14 +536,14 @@ function App() {
               <CardHeader className="p-4 border-b border-pure-light/5 flex flex-row items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Layers size={14} className="text-btc-orange" />
-                  <CardTitle className="text-sm font-mono tracking-wider uppercase font-semibold">MOVE LEDGER</CardTitle>
+                  <CardTitle className="text-sm font-mono tracking-wider uppercase font-semibold">MOVE TELEMETRY LEDGER</CardTitle>
                 </div>
                 <span className="font-mono text-[9px] text-stardust/50 px-2 py-0.5 border border-pure-light/5 bg-black/30 rounded-full">
                   PLIES PLAYED: {moves.length * 2}
                 </span>
               </CardHeader>
               
-              {/* Scrollable list of moves styled as transaction blocks */}
+              {/* Scrollable list of moves */}
               <div className="flex-grow overflow-y-auto p-4 space-y-3 font-mono text-xs">
                 {moves.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-stardust/40 space-y-2">
@@ -314,7 +564,7 @@ function App() {
 
                       {/* Side by side player moves */}
                       <div className="grid grid-cols-2 gap-4">
-                        {/* White transaction */}
+                        {/* White move */}
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[9px] text-stardust/40 uppercase">WHITE MOVE TELEMETRY</span>
                           <div className="flex items-center justify-between">
@@ -323,7 +573,7 @@ function App() {
                           </div>
                         </div>
 
-                        {/* Black transaction */}
+                        {/* Black move */}
                         {m.black ? (
                           <div className="flex flex-col gap-0.5 border-l border-pure-light/5 pl-4">
                             <span className="text-[9px] text-stardust/40 uppercase">BLACK MOVE TELEMETRY</span>
