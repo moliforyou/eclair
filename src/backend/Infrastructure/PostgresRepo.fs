@@ -33,10 +33,10 @@ type PostgresRepo(connectionString: string) =
                     |> Sql.query "SELECT StateFen, WhitePlayerId, BlackPlayerId, Version FROM Games WHERE GameId = @id"
                     |> Sql.parameters [ "id", Sql.string gameId ]
                     |> Sql.execute (fun read -> {|
-                        StateFen = read.string "StateFen"
-                        WhitePlayerId = read.string "WhitePlayerId"
-                        BlackPlayerId = read.string "BlackPlayerId"
-                        Version = read.int "Version"
+                        StateFen = read.string "statefen"
+                        WhitePlayerId = read.string "whiteplayerid"
+                        BlackPlayerId = read.string "blackplayerid"
+                        Version = read.int "version"
                     |})
 
                 match result with

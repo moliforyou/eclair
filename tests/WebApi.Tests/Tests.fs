@@ -46,6 +46,7 @@ type AppFactory(repo: IGameRepository) =
         )
         |> ignore
 
+[<Tests>]
 let tests =
     testList "WebApi HTTP E2E Tests" [
 

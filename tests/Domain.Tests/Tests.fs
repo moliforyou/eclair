@@ -498,20 +498,21 @@ let propertyTests =
 
 // ───────── Entry Point ─────────
 
+[<Tests>]
+let allTests =
+    testList "ChessPlatform.Domain" [
+        fenTests
+        pawnTests
+        knightTests
+        bishopTests
+        rookTests
+        queenTests
+        kingTests
+        statusTests
+        errorTests
+        propertyTests
+    ]
+
 [<EntryPoint>]
 let main args =
-    let allTests =
-        testList "ChessPlatform.Domain" [
-            fenTests
-            pawnTests
-            knightTests
-            bishopTests
-            rookTests
-            queenTests
-            kingTests
-            statusTests
-            errorTests
-            propertyTests
-        ]
-
     runTestsWithCLIArgs [] args allTests

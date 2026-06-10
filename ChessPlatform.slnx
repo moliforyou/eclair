@@ -16,6 +16,9 @@
   <Folder Name="/src/backend/WebApi/">
     <Project Path="src/backend/WebApi/ChessPlatform.WebApi.fsproj" />
   </Folder>
+  <Folder Name="/src/backend/Runner/">
+    <Project Path="src/backend/ChessPlatform.Runner/ChessPlatform.Runner.fsproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Application.Tests/">
     <Project Path="tests/Application.Tests/ChessPlatform.Application.Tests.fsproj" />

@@ -20,39 +20,25 @@ let expectError =
     | Ok _ -> failwith "Expected Error, got Ok"
     | Error e -> e
 
-// Global fixture
-let mutable pgContainer: PostgreSqlContainer =
-    Unchecked.defaultof<PostgreSqlContainer>
+// Global fixtures
+let pgContainer = lazy (
+    let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
+    c.StartAsync().GetAwaiter().GetResult()
+    c
+)
 
-let mutable redisContainer: RedisContainer = Unchecked.defaultof<RedisContainer>
+let redisContainer = lazy (
+    let c = RedisBuilder().WithImage("redis:7-alpine").Build ()
+    c.StartAsync().GetAwaiter().GetResult()
+    c
+)
 
-let setup () =
-    task {
-        pgContainer <- PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
-        redisContainer <- RedisBuilder().WithImage("redis:7-alpine").Build ()
-        do! pgContainer.StartAsync ()
-        do! redisContainer.StartAsync ()
-    }
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
-
-let teardown () =
-    task {
-        do! pgContainer.DisposeAsync().AsTask ()
-        do! redisContainer.DisposeAsync().AsTask ()
-    }
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
-
-let tests () =
-    let pgConnectionString = pgContainer.GetConnectionString ()
-    let redisConnectionString = redisContainer.GetConnectionString ()
-
-    let repo = PostgresRepo (pgConnectionString) :> IGameRepository
-    let bus = RedisBus (redisConnectionString) :> IMessageBus
-
+[<Tests>]
+let tests =
     testList "Infrastructure Tests" [
         testAsync "PostgresRepo OCC" {
+            let pgConnectionString = pgContainer.Value.GetConnectionString ()
+            let repo = PostgresRepo (pgConnectionString) :> IGameRepository
             let initialState = Game.newGame ()
             let gameId = "test-game-1"
 
@@ -66,6 +52,14 @@ let tests () =
             // 1. Create Game
             let! res1 = repo.CreateGame (record)
             Expect.isTrue (Result.isOk res1) "create should succeed"
+
+            // 1b. Load Game (tests the postgres column parsing/casing)
+            let! loadedOpt = repo.LoadGame (gameId)
+            Expect.isTrue (Option.isSome loadedOpt) "load game should return Some record"
+            let loaded = Option.get loadedOpt
+            Expect.equal loaded.WhitePlayerId "w1" "WhitePlayerId should match"
+            Expect.equal loaded.BlackPlayerId "b1" "BlackPlayerId should match"
+            Expect.equal loaded.State.Version 0 "Version should match"
 
             // 2. Play a move
             let req: MoveRequest = {
@@ -95,6 +89,8 @@ let tests () =
         }
 
         testAsync "RedisBus Pub/Sub" {
+            let redisConnectionString = redisContainer.Value.GetConnectionString ()
+            let bus = RedisBus (redisConnectionString) :> IMessageBus
             let mux = StackExchange.Redis.ConnectionMultiplexer.Connect (redisConnectionString)
             let sub = mux.GetSubscriber ()
             let channel = StackExchange.Redis.RedisChannel.Literal ("game:test-game-2:events")
@@ -115,7 +111,9 @@ let tests () =
 
 [<EntryPoint>]
 let main args =
-    setup ()
-    let res = runTestsWithCLIArgs [] args (tests ())
-    teardown ()
+    let res = runTestsWithCLIArgs [] args tests
+    if pgContainer.IsValueCreated then
+        pgContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult()
+    if redisContainer.IsValueCreated then
+        redisContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult()
     res

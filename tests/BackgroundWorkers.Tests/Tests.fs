@@ -93,6 +93,7 @@ type MockComputerEngine(bestMoveToReturn: MoveRequest option) =
                 return bestMoveToReturn
             }
 
+[<Tests>]
 let tests =
     testList "ComputerPlayerWorker Tests" [
         testAsync "Does nothing when it is not the computer's turn" {

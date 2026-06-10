@@ -29,6 +29,7 @@ type MockBus() =
                     }
             }
 
+[<Tests>]
 let tests =
     testList "PlayMoveUseCase Tests" [
         testAsync "Returns GameNotFound when game does not exist" {
@@ -145,7 +146,61 @@ let tests =
             | Ok newState -> Expect.equal bus.PublishedMoves.Length 1 "Should publish exactly one event"
             | Error e -> failwithf "Expected success but got %A" e
         }
+
+        testAsync "Returns PersistenceError on database failure" {
+            let state = Game.newGame ()
+
+            let record = {
+                GameId = "game1"
+                State = state
+                WhitePlayerId = "w1"
+                BlackPlayerId = "b1"
+            }
+
+            let repo = MockRepo (Some record, Error (SaveGameError.PersistenceFailure "DB Down"))
+            let bus = MockBus ()
+
+            let req = {
+                From = (4, 1)
+                To = (4, 3)
+                Promotion = None
+            }
+
+            let! result = PlayMoveUseCase.execute repo bus "game1" "w1" req
+            Expect.equal result (Error (PlayMoveUseCase.PersistenceError "DB Down")) "Should be PersistenceError"
+            Expect.isEmpty bus.PublishedMoves "Should not publish move on persistence failure"
+        }
+    ]
+
+let matchmakingTests =
+    testList "MatchmakingUseCase Tests" [
+        testAsync "Enqueues player successfully" {
+            let mutable enqueuedUser = None
+            let mutable enqueuedElo = 0
+            let bus = {
+                new IMessageBus with
+                    member _.PublishMovePlayed(_, _) = async { () }
+                    member _.EnqueueMatchmaking(user, elo) = async {
+                        enqueuedUser <- Some user
+                        enqueuedElo <- elo
+                    }
+                    member _.SubscribeMovePlayed _ = async {
+                        return { new System.IDisposable with member _.Dispose() = () }
+                    }
+            }
+
+            do! MatchmakingUseCase.enqueue bus "user1" 1500
+            Expect.equal enqueuedUser (Some "user1") "Should enqueue user1"
+            Expect.equal enqueuedElo 1500 "Should enqueue with ELO 1500"
+        }
+    ]
+
+[<Tests>]
+let allTests =
+    testList "ChessPlatform.Application" [
+        tests
+        matchmakingTests
     ]
 
 [<EntryPoint>]
-let main args = runTestsWithCLIArgs [] args tests
+let main args = runTestsWithCLIArgs [] args allTests
