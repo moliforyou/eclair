@@ -29,6 +29,16 @@ type MockBus() =
                     }
             }
 
+        member _.PublishMatchFound(_, _, _) = async { () }
+        member _.SubscribeMatchFound _ =
+            async {
+                return
+                    { new System.IDisposable with
+                        member _.Dispose() = ()
+                    }
+            }
+        member _.DequeueMatchmakingPair() = async { return [] }
+
 [<Tests>]
 let tests =
     testList "PlayMoveUseCase Tests" [
@@ -187,6 +197,11 @@ let matchmakingTests =
                     member _.SubscribeMovePlayed _ = async {
                         return { new System.IDisposable with member _.Dispose() = () }
                     }
+                    member _.PublishMatchFound(_, _, _) = async { () }
+                    member _.SubscribeMatchFound _ = async {
+                        return { new System.IDisposable with member _.Dispose() = () }
+                    }
+                    member _.DequeueMatchmakingPair() = async { return [] }
             }
 
             do! MatchmakingUseCase.enqueue bus "user1" 1500

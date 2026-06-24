@@ -9,20 +9,23 @@ type PostgresRepo(connectionString: string) =
 
     // Simple schema initialization
     do
-        connectionString
-        |> Sql.connect
-        |> Sql.query
-            """
-            CREATE TABLE IF NOT EXISTS Games (
-                GameId VARCHAR(50) PRIMARY KEY,
-                StateFen TEXT NOT NULL,
-                WhitePlayerId VARCHAR(50) NOT NULL,
-                BlackPlayerId VARCHAR(50) NOT NULL,
-                Version INTEGER NOT NULL
-            )
-            """
-        |> Sql.executeNonQuery
-        |> ignore
+        try
+            connectionString
+            |> Sql.connect
+            |> Sql.query
+                """
+                CREATE TABLE IF NOT EXISTS Games (
+                    GameId VARCHAR(50) PRIMARY KEY,
+                    StateFen TEXT NOT NULL,
+                    WhitePlayerId VARCHAR(50) NOT NULL,
+                    BlackPlayerId VARCHAR(50) NOT NULL,
+                    Version INTEGER NOT NULL
+                )
+                """
+            |> Sql.executeNonQuery
+            |> ignore
+        with ex ->
+            printfn "Warning: DB initialization encountered an exception: %s" ex.Message
 
     interface IGameRepository with
         member this.LoadGame(gameId: string) =

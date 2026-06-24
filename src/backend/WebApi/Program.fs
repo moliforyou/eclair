@@ -37,6 +37,7 @@ module Program =
         |> ignore
 
         builder.Services.AddHostedService<SignalRMoveBroadcaster> () |> ignore
+        builder.Services.AddHostedService<MatchmakingBroadcaster> () |> ignore
 
         let app = builder.Build ()
 

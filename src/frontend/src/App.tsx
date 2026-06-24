@@ -4,7 +4,7 @@ import { Chessboard } from './components/Chessboard'
 import { Button } from './components/ui/Button'
 import { Card, CardHeader, CardTitle } from './components/ui/Card'
 import { Input } from './components/ui/Input'
-import { squareToCoords } from './lib/utils'
+import { squareToCoords, coordsToSquare } from './lib/utils'
 import { HubConnectionBuilder, HubConnection } from '@microsoft/signalr'
 import {
   Activity,
@@ -29,7 +29,14 @@ interface MoveRecord {
 
 function App() {
   const [gameId, setGameId] = useState('lobby-1')
-  const [playerId, setPlayerId] = useState(() => 'player_' + Math.floor(Math.random() * 1000))
+  const [playerId, setPlayerId] = useState(() => {
+    const saved = localStorage.getItem('chess_player_id')
+    if (saved) return saved
+    const fresh = 'player_' + Math.floor(Math.random() * 1000)
+    localStorage.setItem('chess_player_id', fresh)
+    return fresh
+  })
+  const [isQueued, setIsQueued] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
   
   // Fresh standard game setup
@@ -117,6 +124,15 @@ function App() {
       }
     })
 
+    connection.on('MatchFound', (data: { gameId: string, role: string, whitePlayerId: string, blackPlayerId: string }) => {
+      if (isMounted) {
+        console.log('MatchFound event received:', data)
+        setIsQueued(false)
+        setGameId(data.gameId)
+        // The gameId state change will trigger re-render and re-sync
+      }
+    })
+
     connection.start()
       .then(() => {
         if (!isMounted) {
@@ -125,6 +141,7 @@ function App() {
         }
         setConnectionStatus('connected')
         connection.invoke('JoinGame', gameId)
+        connection.invoke('JoinLobby', playerId)
       })
       .catch((err) => {
         console.error('SignalR Hub Connection Error:', err)
@@ -257,6 +274,28 @@ function App() {
       }
     } catch (err) {
       console.error('Error restarting match:', err)
+    }
+  }
+
+  // Join matchmaking queue to be paired with another human player
+  const handleFindMatch = async () => {
+    try {
+      setIsQueued(true)
+      const res = await fetch('/api/matchmaking', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': playerId
+        },
+        body: JSON.stringify({ Elo: 1200 })
+      })
+      if (!res.ok) {
+        setIsQueued(false)
+        console.error('Failed to enqueue for matchmaking')
+      }
+    } catch (err) {
+      setIsQueued(false)
+      console.error('Error joining matchmaking queue:', err)
     }
   }
 
@@ -423,6 +462,19 @@ function App() {
           <div className="flex gap-2 mt-4 md:mt-0 justify-center">
             <Button variant="outline" size="sm" onClick={handleRestart} className="gap-2">
               <RefreshCw size={13} /> Reset Engine
+            </Button>
+            <Button
+              variant={isQueued ? "outline" : "primary"}
+              size="sm"
+              onClick={handleFindMatch}
+              disabled={isQueued}
+              className="gap-2"
+            >
+              {isQueued ? (
+                <><RefreshCw size={13} className="animate-spin" /> Searching...</>
+              ) : (
+                <><User size={13} /> Find Match</>
+              )}
             </Button>
           </div>
         </div>

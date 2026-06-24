@@ -11,3 +11,9 @@ export function squareToCoords(square: string) {
     row: parseInt(square.charAt(1)) - 1
   }
 }
+
+export function coordsToSquare(row: number, col: number) {
+  const file = String.fromCharCode(97 + col)
+  const rank = (row + 1).toString()
+  return file + rank
+}

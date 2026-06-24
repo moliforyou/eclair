@@ -17,10 +17,13 @@ let unwrap =
 type MockMessageBus() =
     let mutable subscribeHandler = None
     let mutable publishedMoves = []
+    let mutable dequeuedPair = []
+    let mutable publishedMatch = None
 
     member _.SubscribeHandler = subscribeHandler
-
     member _.PublishedMoves = publishedMoves
+    member _.SetDequeuedPair(pair) = dequeuedPair <- pair
+    member _.PublishedMatch = publishedMatch
 
     interface IMessageBus with
         member _.PublishMovePlayed(gameId, move) =
@@ -37,6 +40,20 @@ type MockMessageBus() =
                         member _.Dispose() = ()
                     }
             }
+
+        member _.PublishMatchFound(gameId, white, black) =
+            async { publishedMatch <- Some (gameId, white, black) }
+
+        member _.SubscribeMatchFound(handler) =
+            async {
+                return
+                    { new System.IDisposable with
+                        member _.Dispose() = ()
+                    }
+            }
+
+        member _.DequeueMatchmakingPair() =
+            async { return dequeuedPair }
 
 // Helper to wait for the worker to subscribe deterministically
 let waitForSubscription (bus: MockMessageBus) =
@@ -232,6 +249,46 @@ let tests =
             Expect.equal engine.CalledWithStates.Length 1 "Engine consulted once"
             Expect.isEmpty repo.SavedRecords "Should not save any move"
             Expect.isEmpty bus.PublishedMoves "Should not publish any moves"
+        }
+
+        testAsync "MatchmakingWorker pairs players and creates a game" {
+            let bus = MockMessageBus ()
+            bus.SetDequeuedPair [ ("playerA", 1500); ("playerB", 1520) ]
+
+            let repo = MockGameRepository (Map.empty)
+            let logger = NullLogger<MatchmakingWorker>.Instance
+
+            let worker = new MatchmakingWorker (logger, repo, bus)
+            let cancellationTokenSource = new System.Threading.CancellationTokenSource ()
+
+            // Start worker. Since it runs in a loop, it will immediately poll once.
+            let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
+            
+            // Give it a moment to run the loop iteration
+            let mutable matchFound = None
+            let mutable retries = 0
+            while matchFound.IsNone && retries < 50 do
+                do! Async.Sleep 50
+                matchFound <- bus.PublishedMatch
+                retries <- retries + 1
+
+            // Stop
+            let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
+
+            // Verify
+            Expect.isTrue matchFound.IsSome "Match found should be published"
+            let gameId, white, black = matchFound.Value
+            Expect.isTrue (gameId.StartsWith("game_")) "gameId should start with game_"
+            Expect.isTrue (white = "playerA" || white = "playerB") "White player should be one of the matched players"
+            Expect.isTrue (black = "playerA" || black = "playerB") "Black player should be one of the matched players"
+            Expect.notEqual white black "White and Black should not be the same player"
+
+            // Verify game was created in repository
+            let createdGame = Map.tryFind gameId repo.Games
+            Expect.isTrue createdGame.IsSome "Created game should be in the repository"
+            let record = createdGame.Value
+            Expect.equal record.WhitePlayerId white "White player ID must match record"
+            Expect.equal record.BlackPlayerId black "Black player ID must match record"
         }
     ]
 

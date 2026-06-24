@@ -33,6 +33,7 @@ module Program =
         |> ignore
 
         builder.Services.AddHostedService<ComputerPlayerWorker> () |> ignore
+        builder.Services.AddHostedService<MatchmakingWorker> () |> ignore
 
         builder.Build().Run ()
 

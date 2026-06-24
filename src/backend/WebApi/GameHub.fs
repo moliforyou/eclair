@@ -8,3 +8,6 @@ type GameHub() =
 
     member this.JoinGame(gameId: string) =
         this.Groups.AddToGroupAsync (this.Context.ConnectionId, gameId)
+
+    member this.JoinLobby(userId: string) =
+        this.Groups.AddToGroupAsync (this.Context.ConnectionId, "user_" + userId)

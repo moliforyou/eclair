@@ -151,7 +151,12 @@ module Handlers =
                         match record.State.ActiveColor with
                         | White -> "w"
                         | Black -> "b"
-                    return! Response.withStatusCode 200 >> Response.ofJson {| GameId = gameId; Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId |} <| ctx
+                    let moves = 
+                        record.State.History
+                        |> List.rev
+                        |> List.map MoveExtensions.toDto
+                        |> List.toArray
+                    return! Response.withStatusCode 200 >> Response.ofJson {| GameId = gameId; Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves |} <| ctx
                 | None ->
                     return! Response.withStatusCode 404 >> Response.ofJson {| Error = "Game not found" |} <| ctx
             }

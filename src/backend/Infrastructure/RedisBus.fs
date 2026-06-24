@@ -12,31 +12,22 @@ type MoveDto = {
     Promotion: string option
 }
 
+type MatchFoundPayload = {
+    GameId: string
+    WhitePlayerId: string
+    BlackPlayerId: string
+}
+
 type RedisBus(connectionString: string) =
     let redis = ConnectionMultiplexer.Connect (connectionString)
     let db = redis.GetDatabase ()
     let subscriber = redis.GetSubscriber ()
 
-    let moveToDto (move: Move) : MoveDto =
-        let fromPos, toPos = Game.moveFromTo move
-
-        let promo =
-            match move with
-            | Promotion (_, _, pt) -> Some (pt.ToString ())
-            | PromotionCapture (_, _, _, pt) -> Some (pt.ToString ())
-            | _ -> None
-
-        {
-            From = fromPos
-            To = toPos
-            Promotion = promo
-        }
-
     interface IMessageBus with
         member this.PublishMovePlayed(gameId: string, move: Move) =
             async {
                 let channel = RedisChannel.Literal ($"game:{gameId}:events")
-                let dto = moveToDto move
+                let dto = MoveExtensions.toDto move
                 let json = JsonSerializer.Serialize (dto)
                 let! _ = subscriber.PublishAsync (channel, RedisValue json) |> Async.AwaitTask
                 return ()
@@ -73,4 +64,42 @@ type RedisBus(connectionString: string) =
                     }
 
                 return disposable
+            }
+
+        member this.PublishMatchFound(gameId: string, whitePlayerId: string, blackPlayerId: string) =
+            async {
+                let channel = RedisChannel.Literal "matchmaking:matches"
+                let payload = { GameId = gameId; WhitePlayerId = whitePlayerId; BlackPlayerId = blackPlayerId }
+                let json = JsonSerializer.Serialize (payload)
+                let! _ = subscriber.PublishAsync (channel, RedisValue json) |> Async.AwaitTask
+                return ()
+            }
+
+        member this.SubscribeMatchFound(handler: string * string * string -> Async<unit>) =
+            async {
+                let channel = RedisChannel.Literal "matchmaking:matches"
+                let! queue = subscriber.SubscribeAsync (channel) |> Async.AwaitTask
+                queue.OnMessage (fun msg ->
+                    try
+                        let payload = JsonSerializer.Deserialize<MatchFoundPayload> (msg.Message.ToString())
+                        match Option.ofObj payload with
+                        | Some p -> Async.Start (handler (p.GameId, p.WhitePlayerId, p.BlackPlayerId))
+                        | None -> ()
+                    with _ -> ()
+                )
+                let disposable =
+                    { new System.IDisposable with
+                        member _.Dispose() = queue.Unsubscribe ()
+                    }
+                return disposable
+            }
+
+        member this.DequeueMatchmakingPair() =
+            async {
+                let key = RedisKey "matchmaking:queue"
+                let! (results: SortedSetEntry array) = db.SortedSetPopAsync (key, 2L, Order.Ascending) |> Async.AwaitTask
+                return
+                    results
+                    |> Array.map (fun (item: SortedSetEntry) -> (item.Element.ToString(), int item.Score))
+                    |> Array.toList
             }

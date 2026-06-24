@@ -2,6 +2,22 @@ namespace ChessPlatform.Application
 
 open ChessPlatform.Domain
 
+type MoveDto = {
+    From: Position
+    To: Position
+    Promotion: string option
+}
+
+module MoveExtensions =
+    let toDto (move: Move) : MoveDto =
+        let fromPos, toPos = Game.moveFromTo move
+        let promo =
+            match move with
+            | Promotion (_, _, pt) -> Some (pt.ToString ())
+            | PromotionCapture (_, _, _, pt) -> Some (pt.ToString ())
+            | _ -> None
+        { From = fromPos; To = toPos; Promotion = promo }
+
 /// A wrapper around GameState to track user IDs, preserving Domain purity.
 type GameRecord = {
     GameId: string
@@ -35,3 +51,12 @@ type IMessageBus =
 
     /// Subscribes to move played events. The handler receives the gameId.
     abstract member SubscribeMovePlayed: handler: (string -> Async<unit>) -> Async<System.IDisposable>
+
+    /// Publishes an event indicating a match was found.
+    abstract member PublishMatchFound: gameId: string * whitePlayerId: string * blackPlayerId: string -> Async<unit>
+
+    /// Subscribes to matchmaking success events.
+    abstract member SubscribeMatchFound: handler: (string * string * string -> Async<unit>) -> Async<System.IDisposable>
+
+    /// Dequeues up to two players from the matchmaking queue.
+    abstract member DequeueMatchmakingPair: unit -> Async<(string * int) list>

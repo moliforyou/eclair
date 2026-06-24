@@ -23,11 +23,16 @@ type SignalRMoveBroadcaster(logger: ILogger<SignalRMoveBroadcaster>, repo: IGame
                         match record.State.ActiveColor with
                         | White -> "w"
                         | Black -> "b"
+                    let moves = 
+                        record.State.History
+                        |> List.rev
+                        |> List.map MoveExtensions.toDto
+                        |> List.toArray
                     
                     logger.LogInformation ("SignalRMoveBroadcaster: Broadcasting move for game {GameId}. New FEN: {Fen}", gameId, fen)
                     
                     // Broadcast to SignalR group gameId
-                    do! hubContext.Clients.Group(gameId).SendAsync("MovePlayed", {| Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId |}) |> Async.AwaitTask
+                    do! hubContext.Clients.Group(gameId).SendAsync("MovePlayed", {| Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves |}) |> Async.AwaitTask
             with ex ->
                 logger.LogError (ex, "SignalRMoveBroadcaster: Error handling move event for game {GameId}", gameId)
         }
