@@ -32,7 +32,14 @@ type SignalRMoveBroadcaster(logger: ILogger<SignalRMoveBroadcaster>, repo: IGame
                     logger.LogInformation ("SignalRMoveBroadcaster: Broadcasting move for game {GameId}. New FEN: {Fen}", gameId, fen)
                     
                     // Broadcast to SignalR group gameId
-                    do! hubContext.Clients.Group(gameId).SendAsync("MovePlayed", {| Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves |}) |> Async.AwaitTask
+                    let status =
+                        match record.State.Status with
+                        | ChessPlatform.Domain.InProgress -> "InProgress"
+                        | ChessPlatform.Domain.Check _ -> "Check"
+                        | ChessPlatform.Domain.Checkmate w -> sprintf "Checkmate:%A" w
+                        | ChessPlatform.Domain.Stalemate -> "Stalemate"
+                        | ChessPlatform.Domain.Draw r -> sprintf "Draw:%s" r
+                    do! hubContext.Clients.Group(gameId).SendAsync("MovePlayed", {| Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves; Status = status |}) |> Async.AwaitTask
             with ex ->
                 logger.LogError (ex, "SignalRMoveBroadcaster: Error handling move event for game {GameId}", gameId)
         }

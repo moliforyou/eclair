@@ -156,7 +156,14 @@ module Handlers =
                         |> List.rev
                         |> List.map MoveExtensions.toDto
                         |> List.toArray
-                    return! Response.withStatusCode 200 >> Response.ofJson {| GameId = gameId; Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves |} <| ctx
+                    let status =
+                        match record.State.Status with
+                        | InProgress -> "InProgress"
+                        | Check _ -> "Check"
+                        | Checkmate w -> sprintf "Checkmate:%A" w
+                        | Stalemate -> "Stalemate"
+                        | Draw r -> sprintf "Draw:%s" r
+                    return! Response.withStatusCode 200 >> Response.ofJson {| GameId = gameId; Fen = fen; Turn = turnChar; WhitePlayerId = record.WhitePlayerId; BlackPlayerId = record.BlackPlayerId; Moves = moves; Status = status |} <| ctx
                 | None ->
                     return! Response.withStatusCode 404 >> Response.ofJson {| Error = "Game not found" |} <| ctx
             }

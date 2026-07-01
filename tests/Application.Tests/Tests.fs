@@ -46,7 +46,7 @@ let tests =
             let repo = MockRepo (None, Ok ())
             let bus = MockBus ()
 
-            let req = {
+            let req : MoveRequest = {
                 From = (0, 0)
                 To = (0, 1)
                 Promotion = None
@@ -69,13 +69,11 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let bus = MockBus ()
 
-            let req = {
+            let req : MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
             }
-
-            // It's White's turn, but user is Black
             let! result = PlayMoveUseCase.execute repo bus "game1" "b1" req
             Expect.equal result (Error PlayMoveUseCase.NotYourTurn) "Should be NotYourTurn"
         }
@@ -94,7 +92,7 @@ let tests =
             let bus = MockBus ()
 
             // Invalid move (pawn jumping over piece etc, or just impossible move)
-            let req = {
+            let req : MoveRequest = {
                 From = (4, 1)
                 To = (4, 5)
                 Promotion = None
@@ -120,7 +118,7 @@ let tests =
             let repo = MockRepo (Some record, Error SaveGameError.ConcurrencyConflict)
             let bus = MockBus ()
 
-            let req = {
+            let req : MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -144,7 +142,7 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let bus = MockBus ()
 
-            let req = {
+            let req : MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -153,7 +151,7 @@ let tests =
             let! result = PlayMoveUseCase.execute repo bus "game1" "w1" req
 
             match result with
-            | Ok newState -> Expect.equal bus.PublishedMoves.Length 1 "Should publish exactly one event"
+            | Ok _ -> Expect.equal bus.PublishedMoves.Length 1 "Should publish exactly one event"
             | Error e -> failwithf "Expected success but got %A" e
         }
 
@@ -170,7 +168,7 @@ let tests =
             let repo = MockRepo (Some record, Error (SaveGameError.PersistenceFailure "DB Down"))
             let bus = MockBus ()
 
-            let req = {
+            let req : MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None

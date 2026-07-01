@@ -27,6 +27,12 @@ interface MoveRecord {
   blackTelemetry?: string
 }
 
+interface ServerMoveDto {
+  From: { Item1: number; Item2: number }
+  To: { Item1: number; Item2: number }
+  Promotion: string | null
+}
+
 function App() {
   const [gameId, setGameId] = useState('lobby-1')
   const [playerId, setPlayerId] = useState(() => {
@@ -38,6 +44,7 @@ function App() {
   })
   const [isQueued, setIsQueued] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
+  const [gameStatus, setGameStatus] = useState<string>('InProgress')
   
   // Fresh standard game setup
   const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
@@ -56,24 +63,49 @@ function App() {
   useEffect(() => {
     let isMounted = true
 
-    // Helper to update state from a FEN string
-    const updateGameState = (newFen: string) => {
+    // Helper to rebuild move records from a server Moves array
+    const buildMovesFromServer = (serverMoves: ServerMoveDto[]): MoveRecord[] => {
+      // Replay all moves on a fresh board to get algebraic notation
+      const tempGame = new Chess()
+      const algMoves: string[] = []
+      for (const m of serverMoves) {
+        try {
+          const result = tempGame.move({
+            from: coordsToSquare(m.From.Item2, m.From.Item1),
+            to: coordsToSquare(m.To.Item2, m.To.Item1),
+            promotion: m.Promotion ? m.Promotion.toLowerCase() : undefined,
+          })
+          if (result) algMoves.push(result.san)
+        } catch {
+          // skip unrecognised moves
+        }
+      }
+      const records: MoveRecord[] = []
+      for (let i = 0; i < algMoves.length; i += 2) {
+        records.push({
+          num: Math.floor(i / 2) + 1,
+          white: algMoves[i],
+          black: algMoves[i + 1] || undefined,
+          whiteTelemetry: `eval: +0.15 | t: 3ms`,
+          blackTelemetry: algMoves[i + 1] ? `eval: -0.10 | t: 4ms` : undefined,
+        })
+      }
+      return records
+    }
+
+    // Helper to update state from a FEN string (for initial HTTP sync)
+    const updateGameState = (newFen: string, serverMoves?: ServerMoveDto[], status?: string) => {
       setFen(newFen)
       const localGame = new Chess(newFen)
       setGame(localGame)
+      setGameStatus(status ?? 'InProgress')
 
-      const history = localGame.history()
-      const records: MoveRecord[] = []
-      for (let i = 0; i < history.length; i += 2) {
-        records.push({
-          num: Math.floor(i / 2) + 1,
-          white: history[i],
-          black: history[i + 1] || undefined,
-          whiteTelemetry: `eval: +0.15 | t: 3ms`, // Default telemetry placeholder
-          blackTelemetry: history[i + 1] ? `eval: -0.10 | t: 4ms` : undefined,
-        })
+      if (serverMoves && serverMoves.length > 0) {
+        setMoves(buildMovesFromServer(serverMoves))
+      } else {
+        // Fallback: no server move history available
+        setMoves([])
       }
-      setMoves(records)
     }
 
     // 1. Initial HTTP sync with database
@@ -91,12 +123,12 @@ function App() {
             const freshRes = await fetch(`/api/games/${gameId}`)
             if (freshRes.ok && isMounted) {
               const data = await freshRes.json()
-              updateGameState(data.fen)
+              updateGameState(data.fen, data.moves, data.status)
             }
           }
         } else if (getRes.ok && isMounted) {
           const data = await getRes.json()
-          updateGameState(data.fen)
+          updateGameState(data.fen, data.moves, data.status)
         }
       } catch (err) {
         console.error('Failed to sync game state with backend:', err)
@@ -117,10 +149,10 @@ function App() {
       .withAutomaticReconnect()
       .build()
 
-    connection.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string }) => {
+    connection.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string, moves: ServerMoveDto[], status: string }) => {
       if (isMounted) {
         // Received real-time move broadcast from backend!
-        updateGameState(data.fen)
+        updateGameState(data.fen, data.moves, data.status)
       }
     })
 
@@ -128,6 +160,8 @@ function App() {
       if (isMounted) {
         console.log('MatchFound event received:', data)
         setIsQueued(false)
+        // Join the new game group on the existing connection before teardown
+        connection.invoke('JoinGame', data.gameId).catch(console.error)
         setGameId(data.gameId)
         // The gameId state change will trigger re-render and re-sync
       }
@@ -189,23 +223,31 @@ function App() {
   const handleBoardMove = async (newFen: string, moveDetails?: { from: string; to: string; sanitized: string }) => {
     if (!moveDetails) return
 
-    // 1. Client prediction: instantly display state change locally
+    // 1. Client prediction: append the move to existing records instead of rebuilding from FEN
     setFen(newFen)
     const localGame = new Chess(newFen)
     setGame(localGame)
-
-    const history = localGame.history()
-    const records: MoveRecord[] = []
-    for (let i = 0; i < history.length; i += 2) {
-      records.push({
-        num: Math.floor(i / 2) + 1,
-        white: history[i],
-        black: history[i + 1] || undefined,
-        whiteTelemetry: generateTelemetry(),
-        blackTelemetry: history[i + 1] ? generateTelemetry() : undefined,
-      })
-    }
-    setMoves(records)
+    // Append a client-predicted move entry (server will confirm via SignalR MovePlayed)
+    setMoves(prev => {
+      const san = moveDetails.sanitized || moveDetails.from + moveDetails.to
+      const lastRecord = prev[prev.length - 1]
+      const needsNewRecord = !lastRecord || lastRecord.black !== undefined
+      if (needsNewRecord) {
+        return [...prev, {
+          num: prev.length + 1,
+          white: san,
+          black: undefined,
+          whiteTelemetry: generateTelemetry(),
+        }]
+      } else {
+        // Fill in black's move on the last record
+        return prev.slice(0, -1).concat([{
+          ...lastRecord,
+          black: san,
+          blackTelemetry: generateTelemetry(),
+        }])
+      }
+    })
     setCommandError(null)
 
     // 2. Push move to server
@@ -269,6 +311,7 @@ function App() {
       if (res.ok) {
         setCommand('')
         setCommandError(null)
+        setGameStatus('InProgress')
       } else {
         console.error('Failed to restart match on server')
       }
@@ -317,18 +360,26 @@ function App() {
         setFen(nextFen)
         setGame(tempGame)
 
-        const history = tempGame.history()
-        const records: MoveRecord[] = []
-        for (let i = 0; i < history.length; i += 2) {
-          records.push({
-            num: Math.floor(i / 2) + 1,
-            white: history[i],
-            black: history[i + 1] || undefined,
-            whiteTelemetry: generateTelemetry(),
-            blackTelemetry: history[i + 1] ? generateTelemetry() : undefined,
-          })
-        }
-        setMoves(records)
+        // Append the new move to the existing records (server will confirm via MovePlayed)
+        setMoves(prev => {
+          const san = result.san
+          const lastRecord = prev[prev.length - 1]
+          const needsNewRecord = !lastRecord || lastRecord.black !== undefined
+          if (needsNewRecord) {
+            return [...prev, {
+              num: prev.length + 1,
+              white: san,
+              black: undefined,
+              whiteTelemetry: generateTelemetry(),
+            }]
+          } else {
+            return prev.slice(0, -1).concat([{
+              ...lastRecord,
+              black: san,
+              blackTelemetry: generateTelemetry(),
+            }])
+          }
+        })
         setCommand('')
         setCommandError(null)
 
@@ -499,9 +550,13 @@ function App() {
               <User size={16} />
               <span className="text-xs uppercase tracking-wider text-stardust">Player ID:</span>
             </div>
-            <Input
+          <Input
               value={playerId}
-              onChange={(e) => setPlayerId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                setPlayerId(val)
+                localStorage.setItem('chess_player_id', val)
+              }}
               placeholder="Enter Player User ID"
               className="h-9 text-xs"
             />
@@ -525,6 +580,30 @@ function App() {
                 onMove={handleBoardMove}
                 disabled={false}
               />
+              {/* Game-over overlay */}
+              {gameStatus && gameStatus !== 'InProgress' && gameStatus !== 'Check' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm rounded-xl z-20">
+                  <div className="text-center space-y-3 px-8">
+                    <div className="text-4xl">
+                      {gameStatus.startsWith('Checkmate') ? '♚' : gameStatus === 'Stalemate' ? '⚖️' : '🤝'}
+                    </div>
+                    <h2 className="font-heading font-bold text-2xl text-pure-light">
+                      {gameStatus.startsWith('Checkmate:White') ? 'White Wins!' :
+                       gameStatus.startsWith('Checkmate:Black') ? 'Black Wins!' :
+                       gameStatus === 'Stalemate' ? 'Stalemate' :
+                       gameStatus.startsWith('Draw') ? 'Draw' : 'Game Over'}
+                    </h2>
+                    <p className="text-stardust text-sm font-mono">
+                      {gameStatus.startsWith('Checkmate') ? 'Checkmate — the game is over.' :
+                       gameStatus === 'Stalemate' ? 'No legal moves — stalemate.' :
+                       gameStatus.replace('Draw:', 'Draw: ')}
+                    </p>
+                    <Button variant="primary" size="sm" onClick={handleRestart} className="mt-2">
+                      <RefreshCw size={13} /> Play Again
+                    </Button>
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* algebraic Terminal Console Bar (Bottom of Board) */}

@@ -2,21 +2,21 @@ namespace ChessPlatform.Application
 
 open ChessPlatform.Domain
 
-type MoveDto = {
+type MoveSummaryDto = {
     From: Position
     To: Position
     Promotion: string option
 }
 
 module MoveExtensions =
-    let toDto (move: Move) : MoveDto =
+    let toDto (move: Move) : MoveSummaryDto =
         let fromPos, toPos = Game.moveFromTo move
         let promo =
             match move with
             | Promotion (_, _, pt) -> Some (pt.ToString ())
             | PromotionCapture (_, _, _, pt) -> Some (pt.ToString ())
             | _ -> None
-        { From = fromPos; To = toPos; Promotion = promo }
+        { From = fromPos; To = toPos; Promotion = promo } : MoveSummaryDto
 
 /// A wrapper around GameState to track user IDs, preserving Domain purity.
 type GameRecord = {

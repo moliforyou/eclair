@@ -35,7 +35,11 @@ type ComputerPlayerWorker
                         let! bestMoveOpt = engine.GetBestMove record.State
 
                         match bestMoveOpt with
-                        | None -> logger.LogWarning ("Computer has no legal moves in game {GameId}", gameId)
+                        | None ->
+                            // No legal moves: game is Checkmate or Stalemate.
+                            // Publish a sentinel event so SignalR broadcasts the terminal state to all clients.
+                            logger.LogInformation ("Computer has no legal moves in game {GameId} — broadcasting terminal game status {Status}", gameId, record.State.Status)
+                            do! bus.PublishMovePlayed (gameId, Normal ((0, 0), (0, 0)))
                         | Some moveReq ->
                             do! Async.Sleep 500
                             let! result = PlayMoveUseCase.execute repo bus gameId computerUserId moveReq
