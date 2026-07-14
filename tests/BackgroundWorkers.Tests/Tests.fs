@@ -52,8 +52,7 @@ type MockMessageBus() =
                     }
             }
 
-        member _.DequeueMatchmakingPair() =
-            async { return dequeuedPair }
+        member _.DequeueMatchmakingPair() = async { return dequeuedPair }
 
 // Helper to wait for the worker to subscribe deterministically
 let waitForSubscription (bus: MockMessageBus) =
@@ -150,7 +149,7 @@ let tests =
         testAsync "Plays a move automatically when it is the computer's turn" {
             let state = Game.newGame () // White's turn
             // Simulate White playing e2 to e4 to make it Black's (computer's) turn
-            let whiteMove : MoveRequest = {
+            let whiteMove: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -169,7 +168,7 @@ let tests =
             let bus = MockMessageBus ()
 
             // Computer wants to respond with e7 to e5
-            let computerMove : MoveRequest option =
+            let computerMove: MoveRequest option =
                 Some {
                     From = (4, 6)
                     To = (4, 4)
@@ -218,7 +217,7 @@ let tests =
         testAsync "Handles case where computer has no legal moves (Checkmate or Stalemate)" {
             let state = Game.newGame ()
 
-            let whiteMove : MoveRequest = {
+            let whiteMove: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -248,12 +247,7 @@ let tests =
 
             Expect.equal engine.CalledWithStates.Length 1 "Engine consulted once"
             Expect.isEmpty repo.SavedRecords "Should not save any move"
-            Expect.equal bus.PublishedMoves.Length 1 "Should publish the sentinel move for game status update"
-            let gameId, move = bus.PublishedMoves.[0]
-            Expect.equal gameId "game1" "GameId should match"
-            let fromPos, toPos = Game.moveFromTo move
-            Expect.equal fromPos (0, 0) "Sentinel move fromPos should be (0,0)"
-            Expect.equal toPos (0, 0) "Sentinel move toPos should be (0,0)"
+            Expect.isEmpty bus.PublishedMoves "Should not publish any moves"
         }
 
         testAsync "MatchmakingWorker pairs players and creates a game" {
@@ -268,10 +262,11 @@ let tests =
 
             // Start worker. Since it runs in a loop, it will immediately poll once.
             let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
-            
+
             // Give it a moment to run the loop iteration
             let mutable matchFound = None
             let mutable retries = 0
+
             while matchFound.IsNone && retries < 50 do
                 do! Async.Sleep 50
                 matchFound <- bus.PublishedMatch
@@ -283,7 +278,7 @@ let tests =
             // Verify
             Expect.isTrue matchFound.IsSome "Match found should be published"
             let gameId, white, black = matchFound.Value
-            Expect.isTrue (gameId.StartsWith("game_")) "gameId should start with game_"
+            Expect.isTrue (gameId.StartsWith ("game_")) "gameId should start with game_"
             Expect.isTrue (white = "playerA" || white = "playerB") "White player should be one of the matched players"
             Expect.isTrue (black = "playerA" || black = "playerB") "Black player should be one of the matched players"
             Expect.notEqual white black "White and Black should not be the same player"

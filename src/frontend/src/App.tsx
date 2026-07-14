@@ -34,7 +34,8 @@ interface ServerMoveDto {
 }
 
 function App() {
-  const [gameId, setGameId] = useState('lobby-1')
+  const [screen, setScreen] = useState<'landing' | 'game'>('landing')
+  const [gameId, setGameId] = useState<string | null>(null)
   const [playerId, setPlayerId] = useState(() => {
     const saved = localStorage.getItem('chess_player_id')
     if (saved) return saved
@@ -42,6 +43,8 @@ function App() {
     localStorage.setItem('chess_player_id', fresh)
     return fresh
   })
+  const [whitePlayerId, setWhitePlayerId] = useState<string>('')
+  const [blackPlayerId, setBlackPlayerId] = useState<string>('')
   const [isQueued, setIsQueued] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
   const [gameStatus, setGameStatus] = useState<string>('InProgress')
@@ -63,6 +66,23 @@ function App() {
   useEffect(() => {
     let isMounted = true
 
+    // Helper to safely extract coordinates from various tuple/object structures
+    const getPosCoords = (pos: unknown): { row: number, col: number } | null => {
+      if (!pos) return null;
+      if (Array.isArray(pos)) {
+        return { col: pos[0] as number, row: pos[1] as number };
+      }
+      if (typeof pos === 'object') {
+        const obj = pos as Record<string, unknown>;
+        const col = ('Item1' in obj) ? obj.Item1 : ('item1' in obj) ? obj.item1 : null;
+        const row = ('Item2' in obj) ? obj.Item2 : ('item2' in obj) ? obj.item2 : null;
+        if (typeof col === 'number' && typeof row === 'number') {
+          return { col, row };
+        }
+      }
+      return null;
+    }
+
     // Helper to rebuild move records from a server Moves array
     const buildMovesFromServer = (serverMoves: ServerMoveDto[]): MoveRecord[] => {
       // Replay all moves on a fresh board to get algebraic notation
@@ -70,9 +90,13 @@ function App() {
       const algMoves: string[] = []
       for (const m of serverMoves) {
         try {
+          const fromCoords = getPosCoords(m.From);
+          const toCoords = getPosCoords(m.To);
+          if (!fromCoords || !toCoords) continue;
+
           const result = tempGame.move({
-            from: coordsToSquare(m.From.Item2, m.From.Item1),
-            to: coordsToSquare(m.To.Item2, m.To.Item1),
+            from: coordsToSquare(fromCoords.row, fromCoords.col),
+            to: coordsToSquare(toCoords.row, toCoords.col),
             promotion: m.Promotion ? m.Promotion.toLowerCase() : undefined,
           })
           if (result) algMoves.push(result.san)
@@ -94,11 +118,13 @@ function App() {
     }
 
     // Helper to update state from a FEN string (for initial HTTP sync)
-    const updateGameState = (newFen: string, serverMoves?: ServerMoveDto[], status?: string) => {
+    const updateGameState = (newFen: string, serverMoves?: ServerMoveDto[], status?: string, white?: string, black?: string) => {
       setFen(newFen)
       const localGame = new Chess(newFen)
       setGame(localGame)
       setGameStatus(status ?? 'InProgress')
+      if (white) setWhitePlayerId(white)
+      if (black) setBlackPlayerId(black)
 
       if (serverMoves && serverMoves.length > 0) {
         setMoves(buildMovesFromServer(serverMoves))
@@ -110,6 +136,7 @@ function App() {
 
     // 1. Initial HTTP sync with database
     const syncGame = async () => {
+      if (!gameId) return
       try {
         const getRes = await fetch(`/api/games/${gameId}`)
         if (getRes.status === 404) {
@@ -123,19 +150,21 @@ function App() {
             const freshRes = await fetch(`/api/games/${gameId}`)
             if (freshRes.ok && isMounted) {
               const data = await freshRes.json()
-              updateGameState(data.fen, data.moves, data.status)
+              updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
             }
           }
         } else if (getRes.ok && isMounted) {
           const data = await getRes.json()
-          updateGameState(data.fen, data.moves, data.status)
+          updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
         }
       } catch (err) {
         console.error('Failed to sync game state with backend:', err)
       }
     }
 
-    syncGame()
+    if (gameId) {
+      syncGame()
+    }
 
     // 2. Establish SignalR Connection
     setTimeout(() => {
@@ -152,7 +181,7 @@ function App() {
     connection.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string, moves: ServerMoveDto[], status: string }) => {
       if (isMounted) {
         // Received real-time move broadcast from backend!
-        updateGameState(data.fen, data.moves, data.status)
+        updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
       }
     })
 
@@ -163,6 +192,7 @@ function App() {
         // Join the new game group on the existing connection before teardown
         connection.invoke('JoinGame', data.gameId).catch(console.error)
         setGameId(data.gameId)
+        setScreen('game')
         // The gameId state change will trigger re-render and re-sync
       }
     })
@@ -174,7 +204,9 @@ function App() {
           return
         }
         setConnectionStatus('connected')
-        connection.invoke('JoinGame', gameId)
+        if (gameId) {
+          connection.invoke('JoinGame', gameId)
+        }
         connection.invoke('JoinLobby', playerId)
       })
       .catch((err) => {
@@ -342,6 +374,30 @@ function App() {
     }
   }
 
+  // Start game vs Computer
+  const handlePlayComputer = () => {
+    const newGameId = 'single_' + Math.floor(Math.random() * 1000000)
+    setGameId(newGameId)
+    setScreen('game')
+  }
+
+  // Leave active game and return to landing page
+  const handleLeaveGame = () => {
+    setGameId(null)
+    setScreen('landing')
+    setFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+    setGame(new Chess())
+    setMoves([])
+    setGameStatus('InProgress')
+    setWhitePlayerId('')
+    setBlackPlayerId('')
+  }
+
+  // Cancel matchmaking search
+  const handleCancelMatch = () => {
+    setIsQueued(false)
+  }
+
   // Command input handler (Algebraic chess terminal commands, e.g. e4, Nf3)
   const handleSendCommand = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -497,237 +553,330 @@ function App() {
         </div>
       </header>
 
-      {/* Main Terminal Body */}
-      <main className="relative max-w-7xl w-full mx-auto px-4 py-8 flex-grow z-10 flex flex-col gap-6">
-        
-        {/* Banner with dramatic technical chess typography */}
-        <div className="text-center md:text-left flex flex-col md:flex-row md:items-end justify-between border-b border-pure-light/5 pb-4">
-          <div>
-            <h1 className="font-heading font-bold text-3xl md:text-5xl tracking-tight leading-tight m-0 text-pure-light">
-              Secure Neural <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Chess Core</span>
+      {/* Main Terminal Body / Screen Router */}
+      {screen === 'landing' ? (
+        <main className="relative max-w-4xl w-full mx-auto px-4 py-12 flex-grow z-10 flex flex-col justify-center items-center gap-8">
+          {/* Logo & Intro */}
+          <div className="text-center space-y-4">
+            <h1 className="font-heading font-bold text-4xl md:text-6xl tracking-tight leading-tight m-0 text-pure-light">
+              ECLAIR<span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent ml-1">CORE</span>
             </h1>
-            <p className="font-body text-sm md:text-base text-stardust mt-1">
-              Zero-latency client predicted move validation. Enter keyboard algebraic commands or select pieces.
+            <p className="font-mono text-xs md:text-sm tracking-widest text-stardust/80 uppercase">
+              Next-Gen Neural Chess Platform
             </p>
           </div>
-          <div className="flex gap-2 mt-4 md:mt-0 justify-center">
-            <Button variant="outline" size="sm" onClick={handleRestart} className="gap-2">
-              <RefreshCw size={13} /> Reset Engine
-            </Button>
-            <Button
-              variant={isQueued ? "outline" : "primary"}
-              size="sm"
-              onClick={handleFindMatch}
-              disabled={isQueued}
-              className="gap-2"
-            >
-              {isQueued ? (
-                <><RefreshCw size={13} className="animate-spin" /> Searching...</>
-              ) : (
-                <><User size={13} /> Find Match</>
-              )}
-            </Button>
-          </div>
-        </div>
 
-        {/* Connection Setup Dashboard Controls */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card variant="glass" className="p-4 flex flex-col md:flex-row gap-4 items-center" hoverEffect={false}>
-            <div className="flex items-center gap-3 text-btc-orange font-mono">
-              <Link2 size={16} />
-              <span className="text-xs uppercase tracking-wider text-stardust">Game ID:</span>
-            </div>
-            <Input
-              value={gameId}
-              onChange={(e) => setGameId(e.target.value.toLowerCase())}
-              placeholder="Enter Game Match ID"
-              className="h-9 text-xs"
-            />
-          </Card>
+          <Card variant="glass" className="w-full max-w-xl p-8 space-y-6 backdrop-blur-md relative overflow-hidden" withCornerAccents hoverEffect={false}>
+            {/* Ambient decorative nodes */}
+            <div className="absolute top-0 right-0 w-16 h-16 border-t border-r border-btc-orange/10 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b border-l border-gold/10 pointer-events-none" />
 
-          <Card variant="glass" className="p-4 flex flex-col md:flex-row gap-4 items-center" hoverEffect={false}>
-            <div className="flex items-center gap-3 text-gold font-mono">
-              <User size={16} />
-              <span className="text-xs uppercase tracking-wider text-stardust">Player ID:</span>
-            </div>
-          <Input
-              value={playerId}
-              onChange={(e) => {
-                const val = e.target.value
-                setPlayerId(val)
-                localStorage.setItem('chess_player_id', val)
-              }}
-              placeholder="Enter Player User ID"
-              className="h-9 text-xs"
-            />
-          </Card>
-        </div>
-
-        {/* Dynamic Column Split */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Chessboard Area (7 Cols) */}
-          <div className="lg:col-span-7 flex flex-col items-center">
-            <Card className="w-full flex justify-center py-8 px-4 md:px-8 border-pure-light/10 bg-matter/40 backdrop-blur-md holographic-gradient relative overflow-hidden" withCornerAccents hoverEffect={false}>
-              
-              {/* Subtle visual background grid details */}
-              <div className="absolute top-0 right-0 w-32 h-32 border-t border-r border-pure-light/5 pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-32 h-32 border-b border-l border-pure-light/5 pointer-events-none" />
-
-              <Chessboard
-                key={fen}
-                fen={fen}
-                onMove={handleBoardMove}
-                disabled={false}
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-gold font-mono border-b border-pure-light/5 pb-2">
+                <User size={18} className="text-btc-orange" />
+                <span className="text-sm uppercase tracking-wider text-pure-light font-bold">Configure Player Identity</span>
+              </div>
+              <p className="text-xs text-stardust">
+                Your player ID is used to track active games and pair you in the matchmaking system.
+              </p>
+              <Input
+                value={playerId}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setPlayerId(val)
+                  localStorage.setItem('chess_player_id', val)
+                }}
+                placeholder="Enter Player User ID"
+                className="h-11 text-sm bg-black/40 border-pure-light/20 text-pure-light focus:border-btc-orange"
               />
-              {/* Game-over overlay */}
-              {gameStatus && gameStatus !== 'InProgress' && gameStatus !== 'Check' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm rounded-xl z-20">
-                  <div className="text-center space-y-3 px-8">
-                    <div className="text-4xl">
-                      {gameStatus.startsWith('Checkmate') ? '♚' : gameStatus === 'Stalemate' ? '⚖️' : '🤝'}
-                    </div>
-                    <h2 className="font-heading font-bold text-2xl text-pure-light">
-                      {gameStatus.startsWith('Checkmate:White') ? 'White Wins!' :
-                       gameStatus.startsWith('Checkmate:Black') ? 'Black Wins!' :
-                       gameStatus === 'Stalemate' ? 'Stalemate' :
-                       gameStatus.startsWith('Draw') ? 'Draw' : 'Game Over'}
-                    </h2>
-                    <p className="text-stardust text-sm font-mono">
-                      {gameStatus.startsWith('Checkmate') ? 'Checkmate — the game is over.' :
-                       gameStatus === 'Stalemate' ? 'No legal moves — stalemate.' :
-                       gameStatus.replace('Draw:', 'Draw: ')}
-                    </p>
-                    <Button variant="primary" size="sm" onClick={handleRestart} className="mt-2">
-                      <RefreshCw size={13} /> Play Again
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </Card>
+            </div>
 
-            {/* algebraic Terminal Console Bar (Bottom of Board) */}
-            <div className="w-full mt-4">
-              <form onSubmit={handleSendCommand} className="flex gap-3">
-                <Input
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="ENTER ALGEBRAIC MOVE e.g. 'e4', 'Nf3', 'd4'..."
-                  withPrefix={<TerminalIcon size={14} />}
-                  className="flex-grow"
-                />
-                <Button type="submit" variant="primary">
-                  EXECUTE MOVE
-                </Button>
-              </form>
-              
-              {/* Command Errors warning */}
-              {commandError && (
-                <div className="mt-2.5 px-3.5 py-2 border border-red-500/20 bg-red-950/20 rounded-lg text-xs font-mono text-red-400 animate-pulse">
-                  {commandError}
+            <div className="border-t border-pure-light/5 pt-6 space-y-4">
+              <div className="flex items-center gap-3 text-gold font-mono border-b border-pure-light/5 pb-2">
+                <Grid size={18} className="text-gold" />
+                <span className="text-sm uppercase tracking-wider text-pure-light font-bold">Choose Game Mode</span>
+              </div>
+
+              {isQueued ? (
+                <div className="flex flex-col items-center justify-center p-6 bg-black/30 border border-btc-orange/20 rounded-xl space-y-4 animate-pulse">
+                  <RefreshCw size={24} className="text-btc-orange animate-spin" />
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-bold text-pure-light">Matching with an Opponent...</p>
+                    <p className="text-[10px] text-stardust/60 font-mono">YOUR ID: {playerId}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleCancelMatch} className="h-9 px-4">
+                    Cancel Search
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Card 
+                    variant="default" 
+                    className="p-5 flex flex-col justify-between items-start gap-4 bg-matter/40 hover:border-gold/40 border border-pure-light/10 transition-all duration-300 cursor-pointer"
+                    onClick={handlePlayComputer}
+                  >
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-pure-light uppercase tracking-wider">VS Neural Engine</h4>
+                      <p className="text-xs text-stardust">Practice against the computer player instantly.</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full text-[10px] h-9">
+                      Start Game
+                    </Button>
+                  </Card>
+
+                  <Card 
+                    variant="default" 
+                    className="p-5 flex flex-col justify-between items-start gap-4 bg-matter/40 hover:border-btc-orange/40 border border-pure-light/10 transition-all duration-300 cursor-pointer"
+                    onClick={handleFindMatch}
+                  >
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-pure-light uppercase tracking-wider">VS Human Player</h4>
+                      <p className="text-xs text-stardust">Join matchmaking queue to find an online opponent.</p>
+                    </div>
+                    <Button variant="primary" size="sm" className="w-full text-[10px] h-9">
+                      Find Opponent
+                    </Button>
+                  </Card>
                 </div>
               )}
+            </div>
+          </Card>
+
+          {/* Cyber Technical Status info on landing page */}
+          <div className="flex gap-6 text-[10px] font-mono text-stardust/50 tracking-wider">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-gold animate-ping' : 'bg-red-500'}`} />
+              LINK: {connectionStatus.toUpperCase()}
+            </span>
+            <span>LATENCY: {latency}ms</span>
+          </div>
+        </main>
+      ) : (
+        <main className="relative max-w-7xl w-full mx-auto px-4 py-8 flex-grow z-10 flex flex-col gap-6">
+          
+          {/* Banner with dramatic technical chess typography */}
+          <div className="text-center md:text-left flex flex-col md:flex-row md:items-end justify-between border-b border-pure-light/5 pb-4">
+            <div>
+              <h1 className="font-heading font-bold text-3xl md:text-5xl tracking-tight leading-tight m-0 text-pure-light">
+                Secure Neural <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Chess Core</span>
+              </h1>
+              <p className="font-body text-sm md:text-base text-stardust mt-1">
+                Zero-latency client predicted move validation. Enter keyboard algebraic commands or select pieces.
+              </p>
+            </div>
+            <div className="flex gap-2 mt-4 md:mt-0 justify-center">
+              {blackPlayerId === 'computer' && (
+                <Button variant="outline" size="sm" onClick={handleRestart} className="gap-2">
+                  <RefreshCw size={13} /> Reset Game
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={handleLeaveGame} className="gap-2">
+                Leave Game
+              </Button>
             </div>
           </div>
 
-          {/* Live Node Statistics & Move Log Sidebar (5 Cols) */}
-          <div className="lg:col-span-5 flex flex-col gap-6">
-            
-            {/* Live Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4">
-              <Card variant="glass" className="p-4" hoverEffect>
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Node Latency</span>
-                    <span className="font-mono text-lg font-bold text-gold mt-1">{latency} ms</span>
-                  </div>
-                  <div className="p-1.5 border border-gold/20 bg-gold/10 rounded-lg text-gold">
-                    <Activity size={14} />
-                  </div>
+          {/* Active Game Info Dashboard */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card variant="glass" className="p-4 flex justify-between items-center" hoverEffect={false}>
+              <div className="flex items-center gap-3 text-btc-orange font-mono">
+                <Link2 size={16} />
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-stardust block">Game Match ID</span>
+                  <span className="text-xs font-bold text-pure-light">{gameId}</span>
                 </div>
-                <div className="text-[9px] font-mono text-stardust/60 mt-2">Zero-latency Client Prediction Active</div>
-              </Card>
-
-              <Card variant="glass" className="p-4" hoverEffect>
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Engine Nodes</span>
-                    <span className="font-mono text-lg font-bold text-btc-orange mt-1">{(hashrate / 1000).toFixed(2)} M/s</span>
-                  </div>
-                  <div className="p-1.5 border border-btc-orange/20 bg-btc-orange/10 rounded-lg text-btc-orange">
-                    <Cpu size={14} />
-                  </div>
-                </div>
-                <div className="text-[9px] font-mono text-stardust/60 mt-2">chess.js local thread active</div>
-              </Card>
-            </div>
-
-            {/* Live Move Telemetry Ledger */}
-            <Card variant="glass" className="flex-grow flex flex-col h-[350px] lg:h-[400px] p-0 overflow-hidden border-pure-light/10 bg-matter/40 backdrop-blur-md" hoverEffect={false}>
-              <CardHeader className="p-4 border-b border-pure-light/5 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layers size={14} className="text-btc-orange" />
-                  <CardTitle className="text-sm font-mono tracking-wider uppercase font-semibold">MOVE TELEMETRY LEDGER</CardTitle>
-                </div>
-                <span className="font-mono text-[9px] text-stardust/50 px-2 py-0.5 border border-pure-light/5 bg-black/30 rounded-full">
-                  PLIES PLAYED: {moves.length * 2}
-                </span>
-              </CardHeader>
-              
-              {/* Scrollable list of moves */}
-              <div className="flex-grow overflow-y-auto p-4 space-y-3 font-mono text-xs">
-                {moves.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-stardust/40 space-y-2">
-                    <Grid size={24} className="animate-pulse" />
-                    <span className="text-[10px] uppercase tracking-wider">No moves recorded in telemetry ledger</span>
-                  </div>
-                ) : (
-                  moves.map((m) => (
-                    <div
-                      key={m.num}
-                      className="group border border-pure-light/5 bg-black/20 rounded-xl p-3 flex flex-col gap-2 hover:border-btc-orange/30 transition-all duration-300"
-                    >
-                      {/* Move sequence tag */}
-                      <div className="flex justify-between items-center text-[10px] text-stardust/50 border-b border-pure-light/5 pb-1">
-                        <span>MOVE SEQUENCE #{m.num.toString().padStart(3, '0')}</span>
-                        <span className="text-gold font-semibold uppercase">VALIDATED BY ENGINE</span>
-                      </div>
-
-                      {/* Side by side player moves */}
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* White move */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] text-stardust/40 uppercase">WHITE MOVE TELEMETRY</span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gold font-bold text-sm">{m.white}</span>
-                            <span className="text-[8px] text-stardust/60 font-mono">{m.whiteTelemetry}</span>
-                          </div>
-                        </div>
-
-                        {/* Black move */}
-                        {m.black ? (
-                          <div className="flex flex-col gap-0.5 border-l border-pure-light/5 pl-4">
-                            <span className="text-[9px] text-stardust/40 uppercase">BLACK MOVE TELEMETRY</span>
-                            <div className="flex items-center justify-between">
-                              <span className="text-btc-orange font-bold text-sm">{m.black}</span>
-                              <span className="text-[8px] text-stardust/60 font-mono">{m.blackTelemetry}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center pl-4 text-[9px] text-stardust/30 animate-pulse uppercase tracking-wider">
-                            Pending Move...
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={ledgerEndRef} />
+              </div>
+              <div className="px-2.5 py-1 rounded-full border border-btc-orange/20 bg-btc-orange/10 font-mono text-[9px] text-btc-orange uppercase">
+                {blackPlayerId === 'computer' ? 'Singleplayer vs CPU' : 'Multiplayer vs Human'}
               </div>
             </Card>
+
+            <Card variant="glass" className="p-4 flex justify-between items-center" hoverEffect={false}>
+              <div className="flex items-center gap-3 text-gold font-mono">
+                <User size={16} />
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-stardust block">Matchup Profile</span>
+                  <span className="text-xs font-bold text-pure-light">
+                    <span className={playerId === whitePlayerId ? 'text-gold' : 'text-pure-light'}>{whitePlayerId || 'Waiting...'}</span>
+                    <span className="text-stardust/40 mx-2">VS</span>
+                    <span className={playerId === blackPlayerId ? 'text-gold' : 'text-pure-light'}>{blackPlayerId || 'Waiting...'}</span>
+                  </span>
+                </div>
+              </div>
+              {playerId && (whitePlayerId === playerId || blackPlayerId === playerId) && (
+                <div className="px-2.5 py-1 rounded-full border border-gold/20 bg-gold/10 font-mono text-[9px] text-gold uppercase">
+                  Playing as {playerId === whitePlayerId ? 'White' : 'Black'}
+                </div>
+              )}
+            </Card>
           </div>
-        </div>
-      </main>
+
+          {/* Dynamic Column Split */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Chessboard Area (7 Cols) */}
+            <div className="lg:col-span-7 flex flex-col items-center">
+              <Card className="w-full flex justify-center py-8 px-4 md:px-8 border-pure-light/10 bg-matter/40 backdrop-blur-md holographic-gradient relative overflow-hidden" withCornerAccents hoverEffect={false}>
+                
+                {/* Subtle visual background grid details */}
+                <div className="absolute top-0 right-0 w-32 h-32 border-t border-r border-pure-light/5 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-32 h-32 border-b border-l border-pure-light/5 pointer-events-none" />
+
+                <Chessboard
+                  key={fen}
+                  fen={fen}
+                  onMove={handleBoardMove}
+                  disabled={false}
+                />
+                {/* Game-over overlay */}
+                {gameStatus && gameStatus !== 'InProgress' && gameStatus !== 'Check' && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm rounded-xl z-20">
+                    <div className="text-center space-y-3 px-8">
+                      <div className="text-4xl">
+                        {gameStatus.startsWith('Checkmate') ? '♚' : gameStatus === 'Stalemate' ? '⚖️' : '🤝'}
+                      </div>
+                      <h2 className="font-heading font-bold text-2xl text-pure-light">
+                        {gameStatus.startsWith('Checkmate:White') ? 'White Wins!' :
+                         gameStatus.startsWith('Checkmate:Black') ? 'Black Wins!' :
+                         gameStatus === 'Stalemate' ? 'Stalemate' :
+                         gameStatus.startsWith('Draw') ? 'Draw' : 'Game Over'}
+                      </h2>
+                      <p className="text-stardust text-sm font-mono">
+                        {gameStatus.startsWith('Checkmate') ? 'Checkmate — the game is over.' :
+                         gameStatus === 'Stalemate' ? 'No legal moves — stalemate.' :
+                         gameStatus.replace('Draw:', 'Draw: ')}
+                      </p>
+                      <Button variant="primary" size="sm" onClick={handleRestart} className="mt-2">
+                        <RefreshCw size={13} /> Play Again
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Card>
+
+              {/* algebraic Terminal Console Bar (Bottom of Board) */}
+              <div className="w-full mt-4">
+                <form onSubmit={handleSendCommand} className="flex gap-3">
+                  <Input
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    placeholder="ENTER ALGEBRAIC MOVE e.g. 'e4', 'Nf3', 'd4'..."
+                    withPrefix={<TerminalIcon size={14} />}
+                    className="flex-grow"
+                  />
+                  <Button type="submit" variant="primary">
+                    EXECUTE MOVE
+                  </Button>
+                </form>
+                
+                {/* Command Errors warning */}
+                {commandError && (
+                  <div className="mt-2.5 px-3.5 py-2 border border-red-500/20 bg-red-950/20 rounded-lg text-xs font-mono text-red-400 animate-pulse">
+                    {commandError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Live Node Statistics & Move Log Sidebar (5 Cols) */}
+            <div className="lg:col-span-5 flex flex-col gap-6">
+              
+              {/* Live Metrics Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card variant="glass" className="p-4" hoverEffect>
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Node Latency</span>
+                      <span className="font-mono text-lg font-bold text-gold mt-1">{latency} ms</span>
+                    </div>
+                    <div className="p-1.5 border border-gold/20 bg-gold/10 rounded-lg text-gold">
+                      <Activity size={14} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] font-mono text-stardust/60 mt-2">Zero-latency Client Prediction Active</div>
+                </Card>
+
+                <Card variant="glass" className="p-4" hoverEffect>
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Engine Nodes</span>
+                      <span className="font-mono text-lg font-bold text-btc-orange mt-1">{(hashrate / 1000).toFixed(2)} M/s</span>
+                    </div>
+                    <div className="p-1.5 border border-btc-orange/20 bg-btc-orange/10 rounded-lg text-btc-orange">
+                      <Cpu size={14} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] font-mono text-stardust/60 mt-2">chess.js local thread active</div>
+                </Card>
+              </div>
+
+              {/* Live Move Telemetry Ledger */}
+              <Card variant="glass" className="flex-grow flex flex-col h-[350px] lg:h-[400px] p-0 overflow-hidden border-pure-light/10 bg-matter/40 backdrop-blur-md" hoverEffect={false}>
+                <CardHeader className="p-4 border-b border-pure-light/5 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers size={14} className="text-btc-orange" />
+                    <CardTitle className="text-sm font-mono tracking-wider uppercase font-semibold">MOVE TELEMETRY LEDGER</CardTitle>
+                  </div>
+                  <span className="font-mono text-[9px] text-stardust/50 px-2 py-0.5 border border-pure-light/5 bg-black/30 rounded-full">
+                    PLIES PLAYED: {moves.length * 2}
+                  </span>
+                </CardHeader>
+                
+                {/* Scrollable list of moves */}
+                <div className="flex-grow overflow-y-auto p-4 space-y-3 font-mono text-xs">
+                  {moves.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-stardust/40 space-y-2">
+                      <Grid size={24} className="animate-pulse" />
+                      <span className="text-[10px] uppercase tracking-wider">No moves recorded in telemetry ledger</span>
+                    </div>
+                  ) : (
+                    moves.map((m) => (
+                      <div
+                        key={m.num}
+                        className="group border border-pure-light/5 bg-black/20 rounded-xl p-3 flex flex-col gap-2 hover:border-btc-orange/30 transition-all duration-300"
+                      >
+                        {/* Move sequence tag */}
+                        <div className="flex justify-between items-center text-[10px] text-stardust/50 border-b border-pure-light/5 pb-1">
+                          <span>MOVE SEQUENCE #{m.num.toString().padStart(3, '0')}</span>
+                          <span className="text-gold font-semibold uppercase">VALIDATED BY ENGINE</span>
+                        </div>
+
+                        {/* Side by side player moves */}
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* White move */}
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] text-stardust/40 uppercase">WHITE MOVE TELEMETRY</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-gold font-bold text-sm">{m.white}</span>
+                              <span className="text-[8px] text-stardust/60 font-mono">{m.whiteTelemetry}</span>
+                            </div>
+                          </div>
+
+                          {/* Black move */}
+                          {m.black ? (
+                            <div className="flex flex-col gap-0.5 border-l border-pure-light/5 pl-4">
+                              <span className="text-[9px] text-stardust/40 uppercase">BLACK MOVE TELEMETRY</span>
+                              <div className="flex items-center justify-between">
+                                <span className="text-btc-orange font-bold text-sm">{m.black}</span>
+                                <span className="text-[8px] text-stardust/60 font-mono">{m.blackTelemetry}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center pl-4 text-[9px] text-stardust/30 animate-pulse uppercase tracking-wider">
+                              Pending Move...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={ledgerEndRef} />
+                </div>
+              </Card>
+            </div>
+          </div>
+        </main>
+      )}
 
       {/* Cyber Technical Ticker Footer */}
       <footer className="w-full border-t border-pure-light/10 bg-matter/20 mt-12 py-4 text-center font-mono text-[9px] text-stardust/40 tracking-wider">
