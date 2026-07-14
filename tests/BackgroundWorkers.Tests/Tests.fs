@@ -29,6 +29,8 @@ type MockMessageBus() =
         member _.PublishMovePlayed(gameId, move) =
             async { publishedMoves <- (gameId, move) :: publishedMoves }
 
+        member _.PublishGameUpdated _ = async { () }
+
         member _.EnqueueMatchmaking(_, _) = async { () }
 
         member _.SubscribeMovePlayed(handler) =

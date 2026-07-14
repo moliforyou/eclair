@@ -56,7 +56,13 @@ type PostgresRepo(connectionString: string) =
                                 WhitePlayerId = row.WhitePlayerId
                                 BlackPlayerId = row.BlackPlayerId
                             }
-                    | Error _ -> return None // Or throw
+                    | Error err ->
+                        eprintfn
+                            "Error: stored FEN for game %s failed to parse (%A); treating game as not found"
+                            gameId
+                            err
+
+                        return None
                 | _ -> return None
             }
 

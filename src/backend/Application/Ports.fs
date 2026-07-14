@@ -53,6 +53,9 @@ type IMessageBus =
     /// Publishes an event indicating a move was played.
     abstract member PublishMovePlayed: gameId: string * move: Move -> Async<unit>
 
+    /// Publishes a notification that a game's state changed without a move being played (e.g. created or reset).
+    abstract member PublishGameUpdated: gameId: string -> Async<unit>
+
     /// Adds a player to the matchmaking queue.
     abstract member EnqueueMatchmaking: userId: string * elo: int -> Async<unit>
 

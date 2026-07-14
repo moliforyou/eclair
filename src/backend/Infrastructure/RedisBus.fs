@@ -33,6 +33,17 @@ type RedisBus(connectionString: string) =
                 return ()
             }
 
+        member this.PublishGameUpdated(gameId: string) =
+            async {
+                let channel = RedisChannel.Literal ($"game:{gameId}:events")
+
+                let! _ =
+                    subscriber.PublishAsync (channel, RedisValue """{"Event":"GameUpdated"}""")
+                    |> Async.AwaitTask
+
+                return ()
+            }
+
         member this.EnqueueMatchmaking(userId: string, elo: int) =
             async {
                 let key = RedisKey "matchmaking:queue"

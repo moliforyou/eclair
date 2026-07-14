@@ -55,6 +55,8 @@ type MockBus() =
     interface IMessageBus with
         member _.PublishMovePlayed(_, _) = async { () }
 
+        member _.PublishGameUpdated _ = async { () }
+
         member _.EnqueueMatchmaking(user, elo) =
             async { enqueued <- (user, elo) :: enqueued }
 

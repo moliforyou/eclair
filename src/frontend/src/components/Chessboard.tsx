@@ -163,7 +163,7 @@ const ChessPieceSVG: React.FC<{ type: string; color: 'w' | 'b'; className?: stri
 
 interface ChessboardProps {
   fen: string
-  onMove?: (newFen: string, moveDetails: { from: string; to: string; sanitized: string }) => void
+  onMove?: (newFen: string, moveDetails: { from: string; to: string; sanitized: string; promotion?: string }) => void
   onMoveHistory?: (moves: string[]) => void
   disabled?: boolean
 }
@@ -179,6 +179,26 @@ export const Chessboard: React.FC<ChessboardProps> = ({
   const [legalMoves, setLegalMoves] = useState<Square[]>([])
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null)
   const [isFlipped, setIsFlipped] = useState(false) // Allow flipping board (White/Black perspectives)
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null)
+  const [prevFen, setPrevFen] = useState(fen)
+
+  // Sync the internal game instance when the fen prop changes externally
+  // (opponent moves arriving via SignalR, server rollbacks, game resets).
+  // Done during render per https://react.dev/learn/you-might-not-need-an-effect
+  if (fen !== prevFen) {
+    setPrevFen(fen)
+    if (game.fen() !== fen) {
+      try {
+        game.load(fen)
+        setSelectedSquare(null)
+        setLegalMoves([])
+        setLastMove(null)
+        setPendingPromotion(null)
+      } catch {
+        // Ignore malformed FEN; keep the last valid position
+      }
+    }
+  }
 
 
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
@@ -187,6 +207,45 @@ export const Chessboard: React.FC<ChessboardProps> = ({
   const displayFiles = isFlipped ? [...files].reverse() : files
   const displayRanks = isFlipped ? [...ranks].reverse() : ranks
 
+  const executeMove = (from: Square, to: Square, promotion?: string) => {
+    try {
+      const isCapture = game.get(to) !== null
+
+      // Zero-latency client-side prediction
+      // Execute the move immediately in the local instance
+      const move = game.move({ from, to, promotion })
+
+      if (move) {
+        setLastMove({ from, to })
+        setSelectedSquare(null)
+        setLegalMoves([])
+
+        const isCheck = game.inCheck()
+
+        // Sound chime triggers
+        if (isCheck) playSound('check')
+        else if (isCapture) playSound('capture')
+        else playSound('move')
+
+        // Propagate move up
+        if (onMove) {
+          onMove(game.fen(), {
+            from,
+            to,
+            sanitized: move.san,
+            promotion: move.promotion,
+          })
+        }
+
+        if (onMoveHistory) {
+          onMoveHistory(game.history())
+        }
+      }
+    } catch {
+      playSound('invalid')
+    }
+  }
+
   const handleSquareClick = (square: Square) => {
     if (disabled) return
 
@@ -194,47 +253,15 @@ export const Chessboard: React.FC<ChessboardProps> = ({
 
     // If a legal move target is clicked
     if (selectedSquare && legalMoves.includes(square)) {
-      const from = selectedSquare
-      const to = square
+      const isPromotion = game
+        .moves({ square: selectedSquare, verbose: true })
+        .some((m) => m.to === square && m.promotion !== undefined)
 
-      try {
-        const isCapture = game.get(to) !== null
-        
-        // Zero-latency client-side prediction
-        // Execute the move immediately in the local instance
-        const move = game.move({
-          from,
-          to,
-          promotion: 'q', // Auto promote to Queen for UI simplicity
-        })
-
-        if (move) {
-          setLastMove({ from, to })
-          setSelectedSquare(null)
-          setLegalMoves([])
-          
-          const isCheck = game.inCheck()
-          
-          // Sound chime triggers
-          if (isCheck) playSound('check')
-          else if (isCapture) playSound('capture')
-          else playSound('move')
-
-          // Propagate move up
-          if (onMove) {
-            onMove(game.fen(), {
-              from,
-              to,
-              sanitized: move.san,
-            })
-          }
-
-          if (onMoveHistory) {
-            onMoveHistory(game.history())
-          }
-        }
-      } catch {
-        playSound('invalid')
+      if (isPromotion) {
+        // Let the player pick the promotion piece before committing the move
+        setPendingPromotion({ from: selectedSquare, to: square })
+      } else {
+        executeMove(selectedSquare, square)
       }
       return
     }
@@ -351,6 +378,33 @@ export const Chessboard: React.FC<ChessboardProps> = ({
             })
           )}
         </div>
+
+        {/* Promotion piece picker (clicking the backdrop cancels the move) */}
+        {pendingPromotion && (
+          <div
+            className="absolute inset-0 z-30 flex items-center justify-center bg-void/80 backdrop-blur-sm"
+            onClick={() => setPendingPromotion(null)}
+          >
+            <div
+              className="flex gap-3 p-4 rounded-xl border border-pure-light/10 bg-matter"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {(['q', 'r', 'b', 'n'] as const).map((promotionPiece) => (
+                <button
+                  key={promotionPiece}
+                  onClick={() => {
+                    const { from, to } = pendingPromotion
+                    setPendingPromotion(null)
+                    executeMove(from, to, promotionPiece)
+                  }}
+                  className="w-14 h-14 flex items-center justify-center rounded-lg border border-pure-light/10 hover:border-btc-orange/50 hover:bg-btc-orange/10 transition-all duration-200 cursor-pointer"
+                >
+                  <ChessPieceSVG type={promotionPiece} color={game.turn()} className="w-10 h-10" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Board Utility Toolbar */}

@@ -27,10 +27,14 @@ interface MoveRecord {
   blackTelemetry?: string
 }
 
+// HTTP responses (Falco) are PascalCase; SignalR payloads are camelCased by the hub protocol
 interface ServerMoveDto {
-  From: { Item1: number; Item2: number }
-  To: { Item1: number; Item2: number }
-  Promotion: string | null
+  From?: { Item1: number; Item2: number }
+  To?: { Item1: number; Item2: number }
+  Promotion?: string | null
+  from?: { item1: number; item2: number }
+  to?: { item1: number; item2: number }
+  promotion?: string | null
 }
 
 function App() {
@@ -90,14 +94,15 @@ function App() {
       const algMoves: string[] = []
       for (const m of serverMoves) {
         try {
-          const fromCoords = getPosCoords(m.From);
-          const toCoords = getPosCoords(m.To);
+          const fromCoords = getPosCoords(m.From ?? m.from);
+          const toCoords = getPosCoords(m.To ?? m.to);
           if (!fromCoords || !toCoords) continue;
 
+          const promotion = m.Promotion ?? m.promotion
           const result = tempGame.move({
             from: coordsToSquare(fromCoords.row, fromCoords.col),
             to: coordsToSquare(toCoords.row, toCoords.col),
-            promotion: m.Promotion ? m.Promotion.toLowerCase() : undefined,
+            promotion: promotion ? promotion.toLowerCase() : undefined,
           })
           if (result) algMoves.push(result.san)
         } catch {
@@ -150,12 +155,12 @@ function App() {
             const freshRes = await fetch(`/api/games/${gameId}`)
             if (freshRes.ok && isMounted) {
               const data = await freshRes.json()
-              updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
+              updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
             }
           }
         } else if (getRes.ok && isMounted) {
           const data = await getRes.json()
-          updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
+          updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
         }
       } catch (err) {
         console.error('Failed to sync game state with backend:', err)
@@ -252,7 +257,7 @@ function App() {
   }
 
   // Handle board move updates (with client prediction + HTTP server push)
-  const handleBoardMove = async (newFen: string, moveDetails?: { from: string; to: string; sanitized: string }) => {
+  const handleBoardMove = async (newFen: string, moveDetails?: { from: string; to: string; sanitized: string; promotion?: string }) => {
     if (!moveDetails) return
 
     // 1. Client prediction: append the move to existing records instead of rebuilding from FEN
@@ -298,20 +303,26 @@ function App() {
           FromCol: fromCoords.col,
           ToRow: toCoords.row,
           ToCol: toCoords.col,
-          Promotion: 'Q' // Auto-promote to Queen for UI simplicity
+          Promotion: moveDetails.promotion?.toUpperCase() ?? ''
         })
       })
 
       if (!res.ok) {
-        const errorData = await res.json()
-        setCommandError(errorData.Error || 'Move rejected by server')
+        let errorMessage = 'Move rejected by server'
+        try {
+          const errorData = await res.json()
+          errorMessage = errorData.Error || errorMessage
+        } catch {
+          // Non-JSON error body; keep the generic message
+        }
+        setCommandError(errorMessage)
         
         // Rollback: Fetch current state from server
         const syncRes = await fetch(`/api/games/${gameId}`)
         if (syncRes.ok) {
           const data = await syncRes.json()
-          setFen(data.fen)
-          const syncGameInstance = new Chess(data.fen)
+          setFen(data.Fen)
+          const syncGameInstance = new Chess(data.Fen)
           setGame(syncGameInstance)
         }
         setTimeout(() => setCommandError(null), 4000)
@@ -324,8 +335,8 @@ function App() {
       const syncRes = await fetch(`/api/games/${gameId}`)
       if (syncRes.ok) {
         const data = await syncRes.json()
-        setFen(data.fen)
-        const syncGameInstance = new Chess(data.fen)
+        setFen(data.Fen)
+        const syncGameInstance = new Chess(data.Fen)
         setGame(syncGameInstance)
       }
       setTimeout(() => setCommandError(null), 4000)
@@ -460,15 +471,21 @@ function App() {
         })
 
         if (!res.ok) {
-          const errorData = await res.json()
-          setCommandError(errorData.Error || 'Move rejected by server')
-          
+          let errorMessage = 'Move rejected by server'
+          try {
+            const errorData = await res.json()
+            errorMessage = errorData.Error || errorMessage
+          } catch {
+            // Non-JSON error body; keep the generic message
+          }
+          setCommandError(errorMessage)
+
           // Rollback
           const syncRes = await fetch(`/api/games/${gameId}`)
           if (syncRes.ok) {
             const data = await syncRes.json()
-            setFen(data.fen)
-            setGame(new Chess(data.fen))
+            setFen(data.Fen)
+            setGame(new Chess(data.Fen))
           }
           setTimeout(() => setCommandError(null), 4000)
         }
@@ -723,7 +740,6 @@ function App() {
                 <div className="absolute bottom-0 left-0 w-32 h-32 border-b border-l border-pure-light/5 pointer-events-none" />
 
                 <Chessboard
-                  key={fen}
                   fen={fen}
                   onMove={handleBoardMove}
                   disabled={false}

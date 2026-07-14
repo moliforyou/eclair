@@ -45,46 +45,69 @@ module Handlers =
                         | true, v -> v.ToString ()
                         | _ -> "anonymous"
 
-                    let req: MoveRequest = {
-                        From = (reqDto.FromCol, reqDto.FromRow)
-                        To = (reqDto.ToCol, reqDto.ToRow)
-                        Promotion =
+                    let inBounds v = v >= 0 && v <= 7
+
+                    let coordsValid =
+                        [ reqDto.FromCol; reqDto.FromRow; reqDto.ToCol; reqDto.ToRow ]
+                        |> List.forall inBounds
+
+                    let promotionResult =
+                        if System.String.IsNullOrEmpty reqDto.Promotion then
+                            Ok None
+                        else
                             match reqDto.Promotion with
-                            | "Q" -> Some Queen
-                            | "R" -> Some Rook
-                            | "B" -> Some Bishop
-                            | "N" -> Some Knight
-                            | _ -> None
-                    }
+                            | "Q" -> Ok (Some Queen)
+                            | "R" -> Ok (Some Rook)
+                            | "B" -> Ok (Some Bishop)
+                            | "N" -> Ok (Some Knight)
+                            | other ->
+                                Error (sprintf "Invalid promotion piece '%s'. Expected one of: Q, R, B, N" other)
 
-                    let! result = PlayMoveUseCase.execute repo bus gameId userId req
-
-                    match result with
-                    | Ok state ->
+                    match coordsValid, promotionResult with
+                    | false, _ ->
                         return!
-                            Response.withStatusCode 200 >> Response.ofJson {| Fen = FenParser.toFen state |}
+                            Response.withStatusCode 400
+                            >> Response.ofJson {|
+                                Error = "Coordinates must be between 0 and 7"
+                            |}
                             <| ctx
-                    | Error err ->
-                        match err with
-                        | PlayMoveUseCase.GameNotFound ->
+                    | true, Error msg ->
+                        return! Response.withStatusCode 400 >> Response.ofJson {| Error = msg |} <| ctx
+                    | true, Ok promotion ->
+                        let req: MoveRequest = {
+                            From = (reqDto.FromCol, reqDto.FromRow)
+                            To = (reqDto.ToCol, reqDto.ToRow)
+                            Promotion = promotion
+                        }
+
+                        let! result = PlayMoveUseCase.execute repo bus gameId userId req
+
+                        match result with
+                        | Ok state ->
                             return!
-                                Response.withStatusCode 404 >> Response.ofJson {| Error = "Game not found" |}
+                                Response.withStatusCode 200 >> Response.ofJson {| Fen = FenParser.toFen state |}
                                 <| ctx
-                        | PlayMoveUseCase.NotYourTurn ->
-                            return!
-                                Response.withStatusCode 400 >> Response.ofJson {| Error = "Not your turn" |}
-                                <| ctx
-                        | PlayMoveUseCase.DomainError e ->
-                            return!
-                                Response.withStatusCode 400 >> Response.ofJson {| Error = sprintf "%A" e |}
-                                <| ctx
-                        | PlayMoveUseCase.ConcurrencyConflict ->
-                            return!
-                                Response.withStatusCode 409
-                                >> Response.ofJson {| Error = "Concurrency conflict" |}
-                                <| ctx
-                        | PlayMoveUseCase.PersistenceError msg ->
-                            return! Response.withStatusCode 500 >> Response.ofJson {| Error = msg |} <| ctx
+                        | Error err ->
+                            match err with
+                            | PlayMoveUseCase.GameNotFound ->
+                                return!
+                                    Response.withStatusCode 404 >> Response.ofJson {| Error = "Game not found" |}
+                                    <| ctx
+                            | PlayMoveUseCase.NotYourTurn ->
+                                return!
+                                    Response.withStatusCode 400 >> Response.ofJson {| Error = "Not your turn" |}
+                                    <| ctx
+                            | PlayMoveUseCase.DomainError e ->
+                                return!
+                                    Response.withStatusCode 400 >> Response.ofJson {| Error = sprintf "%A" e |}
+                                    <| ctx
+                            | PlayMoveUseCase.ConcurrencyConflict ->
+                                return!
+                                    Response.withStatusCode 409
+                                    >> Response.ofJson {| Error = "Concurrency conflict" |}
+                                    <| ctx
+                            | PlayMoveUseCase.PersistenceError msg ->
+                                return! Response.withStatusCode 500 >> Response.ofJson {| Error = msg |} <| ctx
                 }
         )
 
@@ -111,8 +134,8 @@ module Handlers =
 
                     match result with
                     | Ok _ ->
-                        // Publish a dummy move event to notify subscribers of game initialization
-                        do! bus.PublishMovePlayed (gameId, Normal ((0, 0), (0, 0)))
+                        // Notify subscribers of game initialization
+                        do! bus.PublishGameUpdated gameId
 
                         return!
                             Response.withStatusCode 201
@@ -140,7 +163,7 @@ module Handlers =
 
                             match saveResult with
                             | Ok _ ->
-                                do! bus.PublishMovePlayed (gameId, Normal ((0, 0), (0, 0)))
+                                do! bus.PublishGameUpdated gameId
 
                                 return!
                                     Response.withStatusCode 200

@@ -22,7 +22,7 @@ type MatchmakingWorker(logger: ILogger<MatchmakingWorker>, repo: IGameRepository
                         let! pair = bus.DequeueMatchmakingPair ()
 
                         match pair with
-                        | [ (p1, _); (p2, _) ] ->
+                        | [ (p1, elo1); (p2, elo2) ] ->
                             logger.LogInformation ("MatchmakingWorker: Matched {Player1} and {Player2}", p1, p2)
 
                             let white, black = if rand.Next (2) = 0 then (p1, p2) else (p2, p1)
@@ -48,7 +48,19 @@ type MatchmakingWorker(logger: ILogger<MatchmakingWorker>, repo: IGameRepository
                                 )
 
                                 do! bus.PublishMatchFound (gameId, white, black)
-                            | Error e -> logger.LogError ("MatchmakingWorker: Failed to create game: %A", e)
+                            | Error e ->
+                                logger.LogError (
+                                    "MatchmakingWorker: Failed to create game {GameId}: {Error}. Requeueing both players.",
+                                    gameId,
+                                    e
+                                )
+
+                                do! bus.EnqueueMatchmaking (p1, elo1)
+                                do! bus.EnqueueMatchmaking (p2, elo2)
+                        | [ (p, elo) ] ->
+                            // Dequeue pops up to two entries; a lone player must be put back to wait for an opponent
+                            do! bus.EnqueueMatchmaking (p, elo)
+                            do! Async.Sleep 2000
                         | _ -> do! Async.Sleep 2000
                     with ex ->
                         logger.LogError (ex, "MatchmakingWorker error in loop")

@@ -19,6 +19,8 @@ type MockBus() =
         member _.PublishMovePlayed(_, move) =
             async { publishedMoves <- move :: publishedMoves }
 
+        member _.PublishGameUpdated _ = async { () }
+
         member _.EnqueueMatchmaking(_, _) = async { () }
 
         member _.SubscribeMovePlayed _ =
@@ -194,6 +196,7 @@ let matchmakingTests =
             let bus =
                 { new IMessageBus with
                     member _.PublishMovePlayed(_, _) = async { () }
+                    member _.PublishGameUpdated _ = async { () }
 
                     member _.EnqueueMatchmaking(user, elo) =
                         async {
