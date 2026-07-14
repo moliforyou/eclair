@@ -11,12 +11,19 @@ type MoveSummaryDto = {
 module MoveExtensions =
     let toDto (move: Move) : MoveSummaryDto =
         let fromPos, toPos = Game.moveFromTo move
+
         let promo =
             match move with
             | Promotion (_, _, pt) -> Some (pt.ToString ())
             | PromotionCapture (_, _, _, pt) -> Some (pt.ToString ())
             | _ -> None
-        { From = fromPos; To = toPos; Promotion = promo } : MoveSummaryDto
+
+        {
+            From = fromPos
+            To = toPos
+            Promotion = promo
+        }
+        : MoveSummaryDto
 
 /// A wrapper around GameState to track user IDs, preserving Domain purity.
 type GameRecord = {

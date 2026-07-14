@@ -21,17 +21,17 @@ let expectError =
     | Error e -> e
 
 // Global fixtures
-let pgContainer = lazy (
-    let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
-    c.StartAsync().GetAwaiter().GetResult()
-    c
-)
+let pgContainer =
+    lazy
+        (let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
+         c.StartAsync().GetAwaiter().GetResult ()
+         c)
 
-let redisContainer = lazy (
-    let c = RedisBuilder().WithImage("redis:7-alpine").Build ()
-    c.StartAsync().GetAwaiter().GetResult()
-    c
-)
+let redisContainer =
+    lazy
+        (let c = RedisBuilder().WithImage("redis:7-alpine").Build ()
+         c.StartAsync().GetAwaiter().GetResult ()
+         c)
 
 [<Tests>]
 let tests =
@@ -112,8 +112,11 @@ let tests =
 [<EntryPoint>]
 let main args =
     let res = runTestsWithCLIArgs [] args tests
+
     if pgContainer.IsValueCreated then
-        pgContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult()
+        pgContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult ()
+
     if redisContainer.IsValueCreated then
-        redisContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult()
+        redisContainer.Value.DisposeAsync().AsTask().GetAwaiter().GetResult ()
+
     res

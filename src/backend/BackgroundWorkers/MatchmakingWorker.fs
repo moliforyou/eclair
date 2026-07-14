@@ -7,8 +7,7 @@ open System.Threading
 open ChessPlatform.Application
 open ChessPlatform.Domain
 
-type MatchmakingWorker
-    (logger: ILogger<MatchmakingWorker>, repo: IGameRepository, bus: IMessageBus) =
+type MatchmakingWorker(logger: ILogger<MatchmakingWorker>, repo: IGameRepository, bus: IMessageBus) =
 
     inherit BackgroundService()
 
@@ -16,38 +15,43 @@ type MatchmakingWorker
         let runLoop () =
             async {
                 logger.LogInformation "MatchmakingWorker starting loop..."
-                let rand = Random()
+                let rand = Random ()
 
                 while not stoppingToken.IsCancellationRequested do
                     try
-                        let! pair = bus.DequeueMatchmakingPair()
+                        let! pair = bus.DequeueMatchmakingPair ()
+
                         match pair with
                         | [ (p1, _); (p2, _) ] ->
-                            logger.LogInformation("MatchmakingWorker: Matched {Player1} and {Player2}", p1, p2)
-                            
-                            let white, black =
-                                if rand.Next(2) = 0 then (p1, p2)
-                                else (p2, p1)
-                            
-                            let gameId = sprintf "game_%s" (Guid.NewGuid().ToString("N"))
+                            logger.LogInformation ("MatchmakingWorker: Matched {Player1} and {Player2}", p1, p2)
+
+                            let white, black = if rand.Next (2) = 0 then (p1, p2) else (p2, p1)
+
+                            let gameId = sprintf "game_%s" (Guid.NewGuid().ToString ("N"))
+
                             let record = {
                                 GameId = gameId
                                 State = Game.newGame ()
                                 WhitePlayerId = white
                                 BlackPlayerId = black
                             }
-                            
+
                             let! createResult = repo.CreateGame record
+
                             match createResult with
                             | Ok _ ->
-                                logger.LogInformation("MatchmakingWorker: Created game {GameId} with White={White} Black={Black}", gameId, white, black)
+                                logger.LogInformation (
+                                    "MatchmakingWorker: Created game {GameId} with White={White} Black={Black}",
+                                    gameId,
+                                    white,
+                                    black
+                                )
+
                                 do! bus.PublishMatchFound (gameId, white, black)
-                            | Error e ->
-                                logger.LogError("MatchmakingWorker: Failed to create game: %A", e)
-                        | _ ->
-                            do! Async.Sleep 2000
+                            | Error e -> logger.LogError ("MatchmakingWorker: Failed to create game: %A", e)
+                        | _ -> do! Async.Sleep 2000
                     with ex ->
-                        logger.LogError(ex, "MatchmakingWorker error in loop")
+                        logger.LogError (ex, "MatchmakingWorker error in loop")
                         do! Async.Sleep 5000
             }
 

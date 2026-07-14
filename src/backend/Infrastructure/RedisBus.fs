@@ -69,7 +69,13 @@ type RedisBus(connectionString: string) =
         member this.PublishMatchFound(gameId: string, whitePlayerId: string, blackPlayerId: string) =
             async {
                 let channel = RedisChannel.Literal "matchmaking:matches"
-                let payload = { GameId = gameId; WhitePlayerId = whitePlayerId; BlackPlayerId = blackPlayerId }
+
+                let payload = {
+                    GameId = gameId
+                    WhitePlayerId = whitePlayerId
+                    BlackPlayerId = blackPlayerId
+                }
+
                 let json = JsonSerializer.Serialize (payload)
                 let! _ = subscriber.PublishAsync (channel, RedisValue json) |> Async.AwaitTask
                 return ()
@@ -79,27 +85,36 @@ type RedisBus(connectionString: string) =
             async {
                 let channel = RedisChannel.Literal "matchmaking:matches"
                 let! queue = subscriber.SubscribeAsync (channel) |> Async.AwaitTask
+
                 queue.OnMessage (fun msg ->
                     try
-                        let payload = JsonSerializer.Deserialize<MatchFoundPayload> (msg.Message.ToString())
+                        let payload =
+                            JsonSerializer.Deserialize<MatchFoundPayload> (msg.Message.ToString ())
+
                         match Option.ofObj payload with
                         | Some p -> Async.Start (handler (p.GameId, p.WhitePlayerId, p.BlackPlayerId))
                         | None -> ()
-                    with _ -> ()
+                    with _ ->
+                        ()
                 )
+
                 let disposable =
                     { new System.IDisposable with
                         member _.Dispose() = queue.Unsubscribe ()
                     }
+
                 return disposable
             }
 
         member this.DequeueMatchmakingPair() =
             async {
                 let key = RedisKey "matchmaking:queue"
-                let! (results: SortedSetEntry array) = db.SortedSetPopAsync (key, 2L, Order.Ascending) |> Async.AwaitTask
+
+                let! (results: SortedSetEntry array) =
+                    db.SortedSetPopAsync (key, 2L, Order.Ascending) |> Async.AwaitTask
+
                 return
                     results
-                    |> Array.map (fun (item: SortedSetEntry) -> (item.Element.ToString(), int item.Score))
+                    |> Array.map (fun (item: SortedSetEntry) -> (item.Element.ToString (), int item.Score))
                     |> Array.toList
             }

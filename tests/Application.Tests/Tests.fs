@@ -30,6 +30,7 @@ type MockBus() =
             }
 
         member _.PublishMatchFound(_, _, _) = async { () }
+
         member _.SubscribeMatchFound _ =
             async {
                 return
@@ -37,6 +38,7 @@ type MockBus() =
                         member _.Dispose() = ()
                     }
             }
+
         member _.DequeueMatchmakingPair() = async { return [] }
 
 [<Tests>]
@@ -46,7 +48,7 @@ let tests =
             let repo = MockRepo (None, Ok ())
             let bus = MockBus ()
 
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (0, 0)
                 To = (0, 1)
                 Promotion = None
@@ -69,11 +71,12 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let bus = MockBus ()
 
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
             }
+
             let! result = PlayMoveUseCase.execute repo bus "game1" "b1" req
             Expect.equal result (Error PlayMoveUseCase.NotYourTurn) "Should be NotYourTurn"
         }
@@ -92,7 +95,7 @@ let tests =
             let bus = MockBus ()
 
             // Invalid move (pawn jumping over piece etc, or just impossible move)
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 5)
                 Promotion = None
@@ -118,7 +121,7 @@ let tests =
             let repo = MockRepo (Some record, Error SaveGameError.ConcurrencyConflict)
             let bus = MockBus ()
 
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -142,7 +145,7 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let bus = MockBus ()
 
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -165,10 +168,12 @@ let tests =
                 BlackPlayerId = "b1"
             }
 
-            let repo = MockRepo (Some record, Error (SaveGameError.PersistenceFailure "DB Down"))
+            let repo =
+                MockRepo (Some record, Error (SaveGameError.PersistenceFailure "DB Down"))
+
             let bus = MockBus ()
 
-            let req : MoveRequest = {
+            let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
                 Promotion = None
@@ -185,22 +190,37 @@ let matchmakingTests =
         testAsync "Enqueues player successfully" {
             let mutable enqueuedUser = None
             let mutable enqueuedElo = 0
-            let bus = {
-                new IMessageBus with
+
+            let bus =
+                { new IMessageBus with
                     member _.PublishMovePlayed(_, _) = async { () }
-                    member _.EnqueueMatchmaking(user, elo) = async {
-                        enqueuedUser <- Some user
-                        enqueuedElo <- elo
-                    }
-                    member _.SubscribeMovePlayed _ = async {
-                        return { new System.IDisposable with member _.Dispose() = () }
-                    }
+
+                    member _.EnqueueMatchmaking(user, elo) =
+                        async {
+                            enqueuedUser <- Some user
+                            enqueuedElo <- elo
+                        }
+
+                    member _.SubscribeMovePlayed _ =
+                        async {
+                            return
+                                { new System.IDisposable with
+                                    member _.Dispose() = ()
+                                }
+                        }
+
                     member _.PublishMatchFound(_, _, _) = async { () }
-                    member _.SubscribeMatchFound _ = async {
-                        return { new System.IDisposable with member _.Dispose() = () }
-                    }
+
+                    member _.SubscribeMatchFound _ =
+                        async {
+                            return
+                                { new System.IDisposable with
+                                    member _.Dispose() = ()
+                                }
+                        }
+
                     member _.DequeueMatchmakingPair() = async { return [] }
-            }
+                }
 
             do! MatchmakingUseCase.enqueue bus "user1" 1500
             Expect.equal enqueuedUser (Some "user1") "Should enqueue user1"
@@ -209,11 +229,7 @@ let matchmakingTests =
     ]
 
 [<Tests>]
-let allTests =
-    testList "ChessPlatform.Application" [
-        tests
-        matchmakingTests
-    ]
+let allTests = testList "ChessPlatform.Application" [ tests; matchmakingTests ]
 
 [<EntryPoint>]
 let main args = runTestsWithCLIArgs [] args allTests

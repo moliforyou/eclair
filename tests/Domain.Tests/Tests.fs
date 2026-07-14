@@ -514,5 +514,4 @@ let allTests =
     ]
 
 [<EntryPoint>]
-let main args =
-    runTestsWithCLIArgs [] args allTests
+let main args = runTestsWithCLIArgs [] args allTests
