@@ -48,11 +48,17 @@ type PostgresRepo(connectionString: string) =
                     match FenParser.parse row.StateFen with
                     | Ok state ->
                         let stateWithVersion = { state with Version = row.Version }
+                        let finalStatus = Game.detectGameStatus stateWithVersion
+
+                        let stateWithStatus = {
+                            stateWithVersion with
+                                Status = finalStatus
+                        }
 
                         return
                             Some {
                                 GameId = gameId
-                                State = stateWithVersion
+                                State = stateWithStatus
                                 WhitePlayerId = row.WhitePlayerId
                                 BlackPlayerId = row.BlackPlayerId
                             }

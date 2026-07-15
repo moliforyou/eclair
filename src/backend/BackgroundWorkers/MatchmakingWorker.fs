@@ -22,7 +22,7 @@ type MatchmakingWorker(logger: ILogger<MatchmakingWorker>, repo: IGameRepository
                         let! pair = bus.DequeueMatchmakingPair ()
 
                         match pair with
-                        | [ (p1, elo1); (p2, elo2) ] ->
+                        | [ (p1, elo1); (p2, elo2) ] when p1 <> p2 ->
                             logger.LogInformation ("MatchmakingWorker: Matched {Player1} and {Player2}", p1, p2)
 
                             let white, black = if rand.Next (2) = 0 then (p1, p2) else (p2, p1)

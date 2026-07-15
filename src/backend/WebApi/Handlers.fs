@@ -123,69 +123,77 @@ module Handlers =
                     let route = Request.getRoute ctx
                     let gameId = route.GetString "id"
 
-                    let record = {
-                        GameId = gameId
-                        State = Game.newGame ()
-                        WhitePlayerId = reqDto.WhitePlayerId
-                        BlackPlayerId = reqDto.BlackPlayerId
-                    }
-
-                    let! result = repo.CreateGame record
-
-                    match result with
-                    | Ok _ ->
-                        // Notify subscribers of game initialization
-                        do! bus.PublishGameUpdated gameId
-
+                    if reqDto.WhitePlayerId = reqDto.BlackPlayerId then
                         return!
-                            Response.withStatusCode 201
+                            Response.withStatusCode 400
                             >> Response.ofJson {|
-                                Message = "Game created"
-                                GameId = gameId
+                                Error = "White and Black players must be different"
                             |}
                             <| ctx
-                    | Error SaveGameError.ConcurrencyConflict ->
-                        let! existingOpt = repo.LoadGame gameId
+                    else
+                        let record = {
+                            GameId = gameId
+                            State = Game.newGame ()
+                            WhitePlayerId = reqDto.WhitePlayerId
+                            BlackPlayerId = reqDto.BlackPlayerId
+                        }
 
-                        match existingOpt with
-                        | Some existing ->
-                            let resetRecord = {
-                                record with
-                                    State = {
-                                        Game.newGame () with
-                                            Version = existing.State.Version
-                                    }
-                                    WhitePlayerId = reqDto.WhitePlayerId
-                                    BlackPlayerId = reqDto.BlackPlayerId
-                            }
+                        let! result = repo.CreateGame record
 
-                            let! saveResult = repo.SaveGame (resetRecord, existing.State.Version)
+                        match result with
+                        | Ok _ ->
+                            // Notify subscribers of game initialization
+                            do! bus.PublishGameUpdated gameId
 
-                            match saveResult with
-                            | Ok _ ->
-                                do! bus.PublishGameUpdated gameId
-
-                                return!
-                                    Response.withStatusCode 200
-                                    >> Response.ofJson {|
-                                        Message = "Game reset"
-                                        GameId = gameId
-                                    |}
-                                    <| ctx
-                            | Error _ ->
-                                return!
-                                    Response.withStatusCode 500
-                                    >> Response.ofJson {| Error = "Failed to reset game" |}
-                                    <| ctx
-                        | None ->
                             return!
-                                Response.withStatusCode 500
+                                Response.withStatusCode 201
                                 >> Response.ofJson {|
-                                    Error = "Failed to load game for reset"
+                                    Message = "Game created"
+                                    GameId = gameId
                                 |}
                                 <| ctx
-                    | Error (SaveGameError.PersistenceFailure msg) ->
-                        return! Response.withStatusCode 500 >> Response.ofJson {| Error = msg |} <| ctx
+                        | Error SaveGameError.ConcurrencyConflict ->
+                            let! existingOpt = repo.LoadGame gameId
+
+                            match existingOpt with
+                            | Some existing ->
+                                let resetRecord = {
+                                    record with
+                                        State = {
+                                            Game.newGame () with
+                                                Version = existing.State.Version
+                                        }
+                                        WhitePlayerId = reqDto.WhitePlayerId
+                                        BlackPlayerId = reqDto.BlackPlayerId
+                                }
+
+                                let! saveResult = repo.SaveGame (resetRecord, existing.State.Version)
+
+                                match saveResult with
+                                | Ok _ ->
+                                    do! bus.PublishGameUpdated gameId
+
+                                    return!
+                                        Response.withStatusCode 200
+                                        >> Response.ofJson {|
+                                            Message = "Game reset"
+                                            GameId = gameId
+                                        |}
+                                        <| ctx
+                                | Error _ ->
+                                    return!
+                                        Response.withStatusCode 500
+                                        >> Response.ofJson {| Error = "Failed to reset game" |}
+                                        <| ctx
+                            | None ->
+                                return!
+                                    Response.withStatusCode 500
+                                    >> Response.ofJson {|
+                                        Error = "Failed to load game for reset"
+                                    |}
+                                    <| ctx
+                        | Error (SaveGameError.PersistenceFailure msg) ->
+                            return! Response.withStatusCode 500 >> Response.ofJson {| Error = msg |} <| ctx
                 }
         )
 

@@ -358,6 +358,14 @@ let statusTests =
             let result = play state2 (1, 1) (1, 5) |> unwrap
             Expect.equal "" result.Status Stalemate
         }
+
+        test "detectGameStatus on checkmate FEN" {
+            let mateFen = "r1bqkbnr/pppp1Qpp/2n5/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 1 4"
+            let state = FenParser.parse mateFen |> unwrap
+            Expect.equal "Initial parsed status should be InProgress" state.Status InProgress
+            let recalculated = Game.detectGameStatus state
+            Expect.equal "Recalculated status should be Checkmate" recalculated (Checkmate White)
+        }
     ]
 
 // ───────── Error Case Tests ─────────

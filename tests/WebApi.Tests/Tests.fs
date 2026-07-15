@@ -445,6 +445,36 @@ let tests =
 
             Expect.equal bus.Enqueued [ ("player123", 1600) ] "Should have enqueued player123 with ELO 1600"
         }
+
+        testTask "POST /api/games/{id}/create - 201 Created on valid game creation" {
+            let repo = MockRepo (None, Ok ())
+            let factory = new AppFactory (repo)
+            let client = factory.CreateClient ()
+            let json = """{"WhitePlayerId": "playerA", "BlackPlayerId": "playerB"}"""
+
+            let content =
+                new StringContent (json, System.Text.Encoding.UTF8, "application/json")
+
+            let! (response: System.Net.Http.HttpResponseMessage) =
+                client.PostAsync ("/api/games/game123/create", content)
+
+            Expect.equal response.StatusCode HttpStatusCode.Created "Should return 201 Created"
+        }
+
+        testTask "POST /api/games/{id}/create - 400 Bad Request if White and Black players are the same" {
+            let repo = MockRepo (None, Ok ())
+            let factory = new AppFactory (repo)
+            let client = factory.CreateClient ()
+            let json = """{"WhitePlayerId": "playerA", "BlackPlayerId": "playerA"}"""
+
+            let content =
+                new StringContent (json, System.Text.Encoding.UTF8, "application/json")
+
+            let! (response: System.Net.Http.HttpResponseMessage) =
+                client.PostAsync ("/api/games/game123/create", content)
+
+            Expect.equal response.StatusCode HttpStatusCode.BadRequest "Should return 400 Bad Request"
+        }
     ]
 
 /// Bus mock that captures subscription handlers so tests can invoke them deterministically.

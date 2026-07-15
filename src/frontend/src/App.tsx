@@ -88,7 +88,7 @@ function App() {
     }
 
     // Helper to rebuild move records from a server Moves array
-    const buildMovesFromServer = (serverMoves: ServerMoveDto[]): MoveRecord[] => {
+    const buildMovesFromServer = (serverMoves: ServerMoveDto[], activeWhite: string, activeBlack: string): MoveRecord[] => {
       // Replay all moves on a fresh board to get algebraic notation
       const tempGame = new Chess()
       const algMoves: string[] = []
@@ -115,8 +115,8 @@ function App() {
           num: Math.floor(i / 2) + 1,
           white: algMoves[i],
           black: algMoves[i + 1] || undefined,
-          whiteTelemetry: `eval: +0.15 | t: 3ms`,
-          blackTelemetry: algMoves[i + 1] ? `eval: -0.10 | t: 4ms` : undefined,
+          whiteTelemetry: `${activeWhite || 'White'} played ${algMoves[i]}`,
+          blackTelemetry: algMoves[i + 1] ? `${activeBlack || 'Black'} played ${algMoves[i + 1]}` : undefined,
         })
       }
       return records
@@ -131,8 +131,11 @@ function App() {
       if (white) setWhitePlayerId(white)
       if (black) setBlackPlayerId(black)
 
+      const activeWhite = white || whitePlayerId
+      const activeBlack = black || blackPlayerId
+
       if (serverMoves && serverMoves.length > 0) {
-        setMoves(buildMovesFromServer(serverMoves))
+        setMoves(buildMovesFromServer(serverMoves, activeWhite, activeBlack))
       } else {
         // Fallback: no server move history available
         setMoves([])
@@ -227,6 +230,7 @@ function App() {
         connectionRef.current.stop()
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- whitePlayerId/blackPlayerId are stale-closure fallbacks only; adding them would reconnect SignalR on every ID state change which is incorrect
   }, [gameId, playerId])
 
   // Simulate telemetry latency metrics
@@ -249,13 +253,6 @@ function App() {
     ledgerEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [moves])
 
-  const generateTelemetry = () => {
-    const ev = (Math.random() * 2 - 1).toFixed(2)
-    const sign = parseFloat(ev) >= 0 ? '+' : ''
-    const time = Math.floor(Math.random() * 8) + 2
-    return `eval: ${sign}${ev} | t: ${time}ms`
-  }
-
   // Handle board move updates (with client prediction + HTTP server push)
   const handleBoardMove = async (newFen: string, moveDetails?: { from: string; to: string; sanitized: string; promotion?: string }) => {
     if (!moveDetails) return
@@ -274,14 +271,14 @@ function App() {
           num: prev.length + 1,
           white: san,
           black: undefined,
-          whiteTelemetry: generateTelemetry(),
+          whiteTelemetry: `${whitePlayerId || 'White'} played ${san}`,
         }]
       } else {
         // Fill in black's move on the last record
         return prev.slice(0, -1).concat([{
           ...lastRecord,
           black: san,
-          blackTelemetry: generateTelemetry(),
+          blackTelemetry: `${blackPlayerId || 'Black'} played ${san}`,
         }])
       }
     })
@@ -437,13 +434,13 @@ function App() {
               num: prev.length + 1,
               white: san,
               black: undefined,
-              whiteTelemetry: generateTelemetry(),
+              whiteTelemetry: `${whitePlayerId || 'White'} played ${san}`,
             }]
           } else {
             return prev.slice(0, -1).concat([{
               ...lastRecord,
               black: san,
-              blackTelemetry: generateTelemetry(),
+              blackTelemetry: `${blackPlayerId || 'Black'} played ${san}`,
             }])
           }
         })

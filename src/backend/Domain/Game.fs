@@ -480,7 +480,7 @@ module Game =
     // ───────── Game Status Detection ─────────
 
     /// Detect the game status after a move has been applied.
-    let private detectGameStatus (state: GameState) : GameStatus =
+    let detectGameStatus (state: GameState) : GameStatus =
         let opponent = state.ActiveColor // After move, active color has flipped
         let legalMoves = allLegalMoves state
 
