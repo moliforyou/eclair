@@ -88,6 +88,68 @@ let tests =
             Expect.isTrue (Result.isOk res4) "save with correct updated version should succeed"
         }
 
+        testAsync "PostgresRepo LoadGame returns None for missing game" {
+            let pgConnectionString = pgContainer.Value.GetConnectionString ()
+            let repo = PostgresRepo (pgConnectionString) :> IGameRepository
+
+            let! loaded = repo.LoadGame ("no-such-game")
+            Expect.isNone loaded "loading a missing game should return None"
+        }
+
+        testAsync "PostgresRepo LoadGame returns None for malformed stored FEN" {
+            let pgConnectionString = pgContainer.Value.GetConnectionString ()
+            let repo = PostgresRepo (pgConnectionString) :> IGameRepository
+
+            // Insert a corrupt row directly, bypassing the repository
+            pgConnectionString
+            |> Npgsql.FSharp.Sql.connect
+            |> Npgsql.FSharp.Sql.query
+                "INSERT INTO Games (GameId, StateFen, WhitePlayerId, BlackPlayerId, Version) VALUES ('corrupt-game', 'this is not a fen', 'w1', 'b1', 0)"
+            |> Npgsql.FSharp.Sql.executeNonQuery
+            |> ignore
+
+            let! loaded = repo.LoadGame ("corrupt-game")
+            Expect.isNone loaded "loading a game with a malformed FEN should return None, not crash"
+        }
+
+        testAsync "RedisBus PublishGameUpdated notifies the game events channel" {
+            let redisConnectionString = redisContainer.Value.GetConnectionString ()
+            let bus = RedisBus (redisConnectionString) :> IMessageBus
+            let mux = StackExchange.Redis.ConnectionMultiplexer.Connect (redisConnectionString)
+            let sub = mux.GetSubscriber ()
+
+            let channel = StackExchange.Redis.RedisChannel.Literal ("game:test-game-3:events")
+
+            let mutable messageReceived = false
+            sub.Subscribe (channel, fun _ _ -> messageReceived <- true) |> ignore
+
+            do! bus.PublishGameUpdated ("test-game-3")
+
+            do! Async.Sleep 500
+
+            Expect.isTrue messageReceived "GameUpdated notification should arrive on the game events channel"
+        }
+
+        testAsync "RedisBus DequeueMatchmakingPair handles empty queue, lone player, and full pair" {
+            let redisConnectionString = redisContainer.Value.GetConnectionString ()
+            let bus = RedisBus (redisConnectionString) :> IMessageBus
+
+            // Empty queue yields nothing
+            let! empty = bus.DequeueMatchmakingPair ()
+            Expect.equal empty [] "empty queue should dequeue an empty list"
+
+            // A single queued player is still popped (callers must re-enqueue)
+            do! bus.EnqueueMatchmaking ("solo", 1000)
+            let! single = bus.DequeueMatchmakingPair ()
+            Expect.equal single [ ("solo", 1000) ] "a lone player should be popped as a single-entry list"
+
+            // Two players come back lowest-elo first
+            do! bus.EnqueueMatchmaking ("bob", 1400)
+            do! bus.EnqueueMatchmaking ("alice", 1200)
+            let! pair = bus.DequeueMatchmakingPair ()
+            Expect.equal pair [ ("alice", 1200); ("bob", 1400) ] "a full pair should be popped in elo order"
+        }
+
         testAsync "RedisBus Pub/Sub" {
             let redisConnectionString = redisContainer.Value.GetConnectionString ()
             let bus = RedisBus (redisConnectionString) :> IMessageBus

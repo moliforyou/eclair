@@ -330,6 +330,8 @@ export const Chessboard: React.FC<ChessboardProps> = ({
               return (
                 <div
                   key={squareName}
+                  data-square={squareName}
+                  data-legal-target={isTarget || undefined}
                   onClick={() => handleSquareClick(squareName)}
                   className={cn(
                     'relative flex items-center justify-center cursor-pointer transition-all duration-300 aspect-square select-none group',
@@ -392,6 +394,7 @@ export const Chessboard: React.FC<ChessboardProps> = ({
               {(['q', 'r', 'b', 'n'] as const).map((promotionPiece) => (
                 <button
                   key={promotionPiece}
+                  aria-label={`Promote to ${{ q: 'queen', r: 'rook', b: 'bishop', n: 'knight' }[promotionPiece]}`}
                   onClick={() => {
                     const { from, to } = pendingPromotion
                     setPendingPromotion(null)
