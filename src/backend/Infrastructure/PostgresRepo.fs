@@ -4,6 +4,63 @@ open ChessPlatform.Domain
 open ChessPlatform.Application
 open Npgsql
 open Npgsql.FSharp
+open System.Text.Json
+
+/// FEN cannot encode move history, so it is persisted separately as a JSON
+/// array (chronological order) of from/to coordinates plus optional promotion.
+module HistoryJson =
+
+    [<CLIMutable>]
+    type StoredMove = {
+        F: int array
+        T: int array
+        P: string
+    }
+
+    let ofState (state: GameState) : string =
+        state.History
+        |> List.rev
+        |> List.map (fun move ->
+            let (fc, fr), (tc, tr) = Game.moveFromTo move
+
+            let promo =
+                match move with
+                | Promotion (_, _, pt) -> pt.ToString ()
+                | PromotionCapture (_, _, _, pt) -> pt.ToString ()
+                | _ -> ""
+
+            {
+                F = [| fc; fr |]
+                T = [| tc; tr |]
+                P = promo
+            }
+        )
+        |> List.toArray
+        |> JsonSerializer.Serialize
+
+    /// Rebuilds a display-sufficient history (newest first). Captures, castling
+    /// and en passant round-trip as Normal moves carrying the same from/to,
+    /// which is all the MoveSummaryDto projection uses.
+    let toHistory (json: string) : Move list =
+        try
+            match JsonSerializer.Deserialize<StoredMove array> (json) with
+            | null -> []
+            | stored ->
+                stored
+                |> Array.toList
+                |> List.map (fun sm ->
+                    let fromPos = (sm.F.[0], sm.F.[1])
+                    let toPos = (sm.T.[0], sm.T.[1])
+
+                    match sm.P with
+                    | "Queen" -> Promotion (fromPos, toPos, Queen)
+                    | "Rook" -> Promotion (fromPos, toPos, Rook)
+                    | "Bishop" -> Promotion (fromPos, toPos, Bishop)
+                    | "Knight" -> Promotion (fromPos, toPos, Knight)
+                    | _ -> Normal (fromPos, toPos)
+                )
+                |> List.rev
+        with _ -> []
 
 type PostgresRepo(connectionString: string) =
 
@@ -19,9 +76,16 @@ type PostgresRepo(connectionString: string) =
                     StateFen TEXT NOT NULL,
                     WhitePlayerId VARCHAR(50) NOT NULL,
                     BlackPlayerId VARCHAR(50) NOT NULL,
-                    Version INTEGER NOT NULL
+                    Version INTEGER NOT NULL,
+                    HistoryJson TEXT NOT NULL DEFAULT '[]'
                 )
                 """
+            |> Sql.executeNonQuery
+            |> ignore
+
+            connectionString
+            |> Sql.connect
+            |> Sql.query "ALTER TABLE Games ADD COLUMN IF NOT EXISTS HistoryJson TEXT NOT NULL DEFAULT '[]'"
             |> Sql.executeNonQuery
             |> ignore
         with ex ->
@@ -33,13 +97,15 @@ type PostgresRepo(connectionString: string) =
                 let result =
                     connectionString
                     |> Sql.connect
-                    |> Sql.query "SELECT StateFen, WhitePlayerId, BlackPlayerId, Version FROM Games WHERE GameId = @id"
+                    |> Sql.query
+                        "SELECT StateFen, WhitePlayerId, BlackPlayerId, Version, HistoryJson FROM Games WHERE GameId = @id"
                     |> Sql.parameters [ "id", Sql.string gameId ]
                     |> Sql.execute (fun read -> {|
                         StateFen = read.string "statefen"
                         WhitePlayerId = read.string "whiteplayerid"
                         BlackPlayerId = read.string "blackplayerid"
                         Version = read.int "version"
+                        HistoryJson = read.string "historyjson"
                     |})
 
                 match result with
@@ -53,6 +119,7 @@ type PostgresRepo(connectionString: string) =
                         let stateWithStatus = {
                             stateWithVersion with
                                 Status = finalStatus
+                                History = HistoryJson.toHistory row.HistoryJson
                         }
 
                         return
@@ -81,10 +148,11 @@ type PostgresRepo(connectionString: string) =
                         connectionString
                         |> Sql.connect
                         |> Sql.query
-                            "UPDATE Games SET StateFen = @fen, Version = @newVersion WHERE GameId = @id AND Version = @expectedVersion"
+                            "UPDATE Games SET StateFen = @fen, HistoryJson = @history, Version = @newVersion WHERE GameId = @id AND Version = @expectedVersion"
                         |> Sql.parameters [
                             "id", Sql.string record.GameId
                             "fen", Sql.string fen
+                            "history", Sql.string (HistoryJson.ofState record.State)
                             "newVersion", Sql.int (expectedVersion + 1)
                             "expectedVersion", Sql.int expectedVersion
                         ]
@@ -107,13 +175,14 @@ type PostgresRepo(connectionString: string) =
                         connectionString
                         |> Sql.connect
                         |> Sql.query
-                            "INSERT INTO Games (GameId, StateFen, WhitePlayerId, BlackPlayerId, Version) VALUES (@id, @fen, @w, @b, @v)"
+                            "INSERT INTO Games (GameId, StateFen, WhitePlayerId, BlackPlayerId, Version, HistoryJson) VALUES (@id, @fen, @w, @b, @v, @history)"
                         |> Sql.parameters [
                             "id", Sql.string record.GameId
                             "fen", Sql.string fen
                             "w", Sql.string record.WhitePlayerId
                             "b", Sql.string record.BlackPlayerId
                             "v", Sql.int record.State.Version
+                            "history", Sql.string (HistoryJson.ofState record.State)
                         ]
                         |> Sql.executeNonQuery
 

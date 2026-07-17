@@ -19,11 +19,13 @@ type MockMessageBus() =
     let mutable publishedMoves = []
     let mutable dequeuedPair = []
     let mutable publishedMatch = None
+    let mutable enqueuedEntries = []
 
     member _.SubscribeHandler = subscribeHandler
     member _.PublishedMoves = publishedMoves
     member _.SetDequeuedPair(pair) = dequeuedPair <- pair
     member _.PublishedMatch = publishedMatch
+    member _.EnqueuedEntries = enqueuedEntries
 
     interface IMessageBus with
         member _.PublishMovePlayed(gameId, move) =
@@ -31,7 +33,8 @@ type MockMessageBus() =
 
         member _.PublishGameUpdated _ = async { () }
 
-        member _.EnqueueMatchmaking(_, _) = async { () }
+        member _.EnqueueMatchmaking(p, elo) =
+            async { enqueuedEntries <- (p, elo) :: enqueuedEntries }
 
         member _.SubscribeMovePlayed(handler) =
             async {
@@ -291,6 +294,33 @@ let tests =
             let record = createdGame.Value
             Expect.equal record.WhitePlayerId white "White player ID must match record"
             Expect.equal record.BlackPlayerId black "Black player ID must match record"
+        }
+
+        testAsync "MatchmakingWorker requeues when the same player is popped twice" {
+            let bus = MockMessageBus ()
+            bus.SetDequeuedPair [ ("p1", 1200); ("p1", 1200) ]
+
+            let repo = MockGameRepository (Map.empty)
+            let logger = NullLogger<MatchmakingWorker>.Instance
+
+            let worker = new MatchmakingWorker (logger, repo, bus)
+            let cancellationTokenSource = new System.Threading.CancellationTokenSource ()
+
+            let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
+
+            // Give it a moment to process the duplicate pair
+            let mutable retries = 0
+
+            while List.isEmpty bus.EnqueuedEntries && retries < 50 do
+                do! Async.Sleep 50
+                retries <- retries + 1
+
+            let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
+
+            Expect.isNonEmpty bus.EnqueuedEntries "Duplicate player should be requeued, not dropped"
+            Expect.all bus.EnqueuedEntries (fun e -> e = ("p1", 1200)) "Requeued entry should be the popped player"
+            Expect.isTrue bus.PublishedMatch.IsNone "No match should be published for a duplicate pair"
+            Expect.isTrue (Map.isEmpty repo.Games) "No game should be created for a duplicate pair"
         }
     ]
 

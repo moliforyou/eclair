@@ -11,3 +11,6 @@ type GameHub() =
 
     member this.JoinLobby(userId: string) =
         this.Groups.AddToGroupAsync (this.Context.ConnectionId, "user_" + userId)
+
+    // Echo used by clients to measure round-trip latency
+    member this.Ping() = Task.CompletedTask

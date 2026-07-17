@@ -5,10 +5,9 @@ import { Button } from './components/ui/Button'
 import { Card, CardHeader, CardTitle } from './components/ui/Card'
 import { Input } from './components/ui/Input'
 import { squareToCoords, coordsToSquare } from './lib/utils'
-import { HubConnectionBuilder, HubConnection } from '@microsoft/signalr'
+import { HubConnectionBuilder, HubConnection, HubConnectionState, HttpTransportType } from '@microsoft/signalr'
 import {
   Activity,
-  Cpu,
   Layers,
   Terminal as TerminalIcon,
   RefreshCw,
@@ -60,11 +59,11 @@ function App() {
   const [command, setCommand] = useState('')
   const [commandError, setCommandError] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [latency, setLatency] = useState(12)
-  const [hashrate, setHashrate] = useState(2450)
+  const [latency, setLatency] = useState<number | null>(null)
   
   const ledgerEndRef = useRef<HTMLDivElement>(null)
   const connectionRef = useRef<HubConnection | null>(null)
+  const stopPromiseRef = useRef<Promise<unknown>>(Promise.resolve())
 
   // Sync state and establish SignalR connection when gameId or playerId changes
   useEffect(() => {
@@ -174,76 +173,109 @@ function App() {
       syncGame()
     }
 
-    // 2. Establish SignalR Connection
-    setTimeout(() => {
-      if (isMounted) {
-        setConnectionStatus('connecting')
-      }
-    }, 0)
+    // 2. Establish SignalR Connection.
+    // Deferred via setTimeout so StrictMode's mount/unmount/mount cycle cancels the
+    // first attempt before it reaches the network — two connections racing (one
+    // stopped mid-negotiation) can wedge the survivor's websocket upgrade for ~20s
+    let connection: HubConnection | null = null
 
-    const connection = new HubConnectionBuilder()
-      .withUrl('/hubs/game')
-      .withAutomaticReconnect()
-      .build()
+    const startTimer = setTimeout(async () => {
+      // Never overlap with the previous connection's teardown: concurrent
+      // negotiations are what triggered the wedge above
+      await stopPromiseRef.current
+      if (!isMounted) return
+      setConnectionStatus('connecting')
 
-    connection.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string, moves: ServerMoveDto[], status: string }) => {
-      if (isMounted) {
-        // Received real-time move broadcast from backend!
-        updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
-      }
-    })
+      const conn = new HubConnectionBuilder()
+        // The Bun-run Vite dev server cannot proxy WebSocket upgrades, so the default
+        // WebSocket attempt stalls ~20s before falling back; use SSE directly in dev
+        .withUrl('/hubs/game', import.meta.env.DEV ? { transport: HttpTransportType.ServerSentEvents } : {})
+        .withAutomaticReconnect()
+        .build()
+      connection = conn
+      connectionRef.current = conn
 
-    connection.on('MatchFound', (data: { gameId: string, role: string, whitePlayerId: string, blackPlayerId: string }) => {
-      if (isMounted) {
-        console.log('MatchFound event received:', data)
-        setIsQueued(false)
-        // Join the new game group on the existing connection before teardown
-        connection.invoke('JoinGame', data.gameId).catch(console.error)
-        setGameId(data.gameId)
-        setScreen('game')
-        // The gameId state change will trigger re-render and re-sync
-      }
-    })
-
-    connection.start()
-      .then(() => {
-        if (!isMounted) {
-          connection.stop()
-          return
-        }
-        setConnectionStatus('connected')
-        if (gameId) {
-          connection.invoke('JoinGame', gameId)
-        }
-        connection.invoke('JoinLobby', playerId)
+      // Group memberships are keyed to the connection ID, so they must be
+      // re-established after every automatic reconnect
+      conn.onreconnecting(() => {
+        if (isMounted) setConnectionStatus('connecting')
       })
-      .catch((err) => {
-        console.error('SignalR Hub Connection Error:', err)
+      conn.onreconnected(() => {
+        if (!isMounted) return
+        setConnectionStatus('connected')
+        conn.invoke('JoinLobby', playerId).catch(console.error)
+        if (gameId) {
+          conn.invoke('JoinGame', gameId)
+            .then(() => syncGame()) // pull any moves missed while disconnected
+            .catch(console.error)
+        }
+      })
+      conn.onclose(() => {
         if (isMounted) setConnectionStatus('disconnected')
       })
 
-    connectionRef.current = connection
+      conn.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string, moves: ServerMoveDto[], status: string }) => {
+        if (isMounted) {
+          // Received real-time move broadcast from backend!
+          updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
+        }
+      })
+
+      conn.on('MatchFound', (data: { gameId: string, role: string, whitePlayerId: string, blackPlayerId: string }) => {
+        if (isMounted) {
+          console.log('MatchFound event received:', data)
+          setIsQueued(false)
+          setGameId(data.gameId)
+          setScreen('game')
+          // The gameId state change will trigger re-render and re-sync
+        }
+      })
+
+      conn.start()
+        .then(() => {
+          if (!isMounted) {
+            conn.stop()
+            return
+          }
+          setConnectionStatus('connected')
+          if (gameId) {
+            conn.invoke('JoinGame', gameId)
+              .then(() => syncGame()) // re-sync so moves made before the group join aren't missed
+              .catch(console.error)
+          }
+          conn.invoke('JoinLobby', playerId).catch(console.error)
+        })
+        .catch((err) => {
+          console.error('SignalR Hub Connection Error:', err)
+          if (isMounted) setConnectionStatus('disconnected')
+        })
+    }, 0)
 
     return () => {
       isMounted = false
-      if (connectionRef.current) {
-        connectionRef.current.stop()
+      clearTimeout(startTimer)
+      if (connection) {
+        stopPromiseRef.current = connection.stop().catch(() => {})
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- whitePlayerId/blackPlayerId are stale-closure fallbacks only; adding them would reconnect SignalR on every ID state change which is incorrect
   }, [gameId, playerId])
 
-  // Simulate telemetry latency metrics
+  // Measure real round-trip latency against the hub every 3s
   useEffect(() => {
-    const timer = setInterval(() => {
-      setLatency(prev => {
-        const offset = Math.floor(Math.random() * 5) - 2
-        return Math.max(8, Math.min(25, prev + offset))
-      })
-      setHashrate(prev => {
-        const offset = Math.floor(Math.random() * 100) - 50
-        return Math.max(2200, Math.min(2700, prev + offset))
-      })
+    const timer = setInterval(async () => {
+      const conn = connectionRef.current
+      if (conn && conn.state === HubConnectionState.Connected) {
+        const start = performance.now()
+        try {
+          await conn.invoke('Ping')
+          setLatency(Math.max(1, Math.round(performance.now() - start)))
+        } catch {
+          setLatency(null)
+        }
+      } else {
+        setLatency(null)
+      }
     }, 3000)
     return () => clearInterval(timer)
   }, [])
@@ -362,8 +394,16 @@ function App() {
 
   // Join matchmaking queue to be paired with another human player
   const handleFindMatch = async () => {
+    const conn = connectionRef.current
+    if (!conn || conn.state !== HubConnectionState.Connected) {
+      console.error('Cannot join matchmaking: engine link is not connected')
+      return
+    }
     try {
       setIsQueued(true)
+      // Ensure lobby group membership exists server-side before the worker can pair us,
+      // otherwise the MatchFound broadcast could be lost
+      await conn.invoke('JoinLobby', playerId)
       const res = await fetch('/api/matchmaking', {
         method: 'POST',
         headers: {
@@ -516,7 +556,7 @@ function App() {
             </div>
             <div className="flex flex-col">
               <span className="font-heading font-bold text-md leading-none tracking-wider text-pure-light">
-                ECLAIR<span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent ml-1">CORE</span>
+                ECLAIR
               </span>
               <span className="font-mono text-[9px] tracking-widest text-stardust/60 uppercase">
                 Chess Platform Terminal
@@ -573,7 +613,7 @@ function App() {
           {/* Logo & Intro */}
           <div className="text-center space-y-4">
             <h1 className="font-heading font-bold text-4xl md:text-6xl tracking-tight leading-tight m-0 text-pure-light">
-              ECLAIR<span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent ml-1">CORE</span>
+              ECLAIR
             </h1>
             <p className="font-mono text-xs md:text-sm tracking-widest text-stardust/80 uppercase">
               Next-Gen Neural Chess Platform
@@ -662,7 +702,7 @@ function App() {
               <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-gold animate-ping' : 'bg-red-500'}`} />
               LINK: {connectionStatus.toUpperCase()}
             </span>
-            <span>LATENCY: {latency}ms</span>
+            <span>LATENCY: {latency !== null ? `${latency}ms` : '—'}</span>
           </div>
         </main>
       ) : (
@@ -672,7 +712,7 @@ function App() {
           <div className="text-center md:text-left flex flex-col md:flex-row md:items-end justify-between border-b border-pure-light/5 pb-4">
             <div>
               <h1 className="font-heading font-bold text-3xl md:text-5xl tracking-tight leading-tight m-0 text-pure-light">
-                Secure Neural <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Chess Core</span>
+                Secure Neural <span className="bg-gradient-to-r from-btc-orange to-gold bg-clip-text text-transparent">Chess</span>
               </h1>
               <p className="font-body text-sm md:text-base text-stardust mt-1">
                 Zero-latency client predicted move validation. Enter keyboard algebraic commands or select pieces.
@@ -795,31 +835,18 @@ function App() {
             <div className="lg:col-span-5 flex flex-col gap-6">
               
               {/* Live Metrics Grid */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <Card variant="glass" className="p-4" hoverEffect>
                   <div className="flex justify-between items-start">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Node Latency</span>
-                      <span className="font-mono text-lg font-bold text-gold mt-1">{latency} ms</span>
+                      <span className="font-mono text-lg font-bold text-gold mt-1">{latency !== null ? `${latency} ms` : '—'}</span>
                     </div>
                     <div className="p-1.5 border border-gold/20 bg-gold/10 rounded-lg text-gold">
                       <Activity size={14} />
                     </div>
                   </div>
                   <div className="text-[9px] font-mono text-stardust/60 mt-2">Zero-latency Client Prediction Active</div>
-                </Card>
-
-                <Card variant="glass" className="p-4" hoverEffect>
-                  <div className="flex justify-between items-start">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-mono text-stardust uppercase tracking-wider">Engine Nodes</span>
-                      <span className="font-mono text-lg font-bold text-btc-orange mt-1">{(hashrate / 1000).toFixed(2)} M/s</span>
-                    </div>
-                    <div className="p-1.5 border border-btc-orange/20 bg-btc-orange/10 rounded-lg text-btc-orange">
-                      <Cpu size={14} />
-                    </div>
-                  </div>
-                  <div className="text-[9px] font-mono text-stardust/60 mt-2">chess.js local thread active</div>
                 </Card>
               </div>
 
@@ -831,7 +858,7 @@ function App() {
                     <CardTitle className="text-sm font-mono tracking-wider uppercase font-semibold">MOVE TELEMETRY LEDGER</CardTitle>
                   </div>
                   <span className="font-mono text-[9px] text-stardust/50 px-2 py-0.5 border border-pure-light/5 bg-black/30 rounded-full">
-                    PLIES PLAYED: {moves.length * 2}
+                    PLIES PLAYED: {moves.reduce((n, m) => n + (m.black ? 2 : 1), 0)}
                   </span>
                 </CardHeader>
                 
