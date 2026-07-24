@@ -129,3 +129,11 @@ type RedisBus(connectionString: string) =
                     |> Array.map (fun (item: SortedSetEntry) -> (item.Element.ToString (), int item.Score))
                     |> Array.toList
             }
+
+        member this.RemoveFromMatchmakingQueue(userId: string) =
+            async {
+                let key = RedisKey "matchmaking:queue"
+                let member' = RedisValue userId
+                let! _ = db.SortedSetRemoveAsync (key, member') |> Async.AwaitTask
+                return ()
+            }

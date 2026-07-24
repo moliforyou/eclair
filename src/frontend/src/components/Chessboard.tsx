@@ -3,7 +3,8 @@ import { Chess, type Square } from 'chess.js'
 import { cn } from '../lib/utils'
 
 // Synthesise retro synth beeps using Web Audio API for a futuristic mechanical/terminal feel
-const playSound = (type: 'move' | 'capture' | 'check' | 'invalid') => {
+const playSound = (type: 'move' | 'capture' | 'check' | 'invalid', soundEnabled: boolean = true) => {
+  if (!soundEnabled) return
   try {
     const AudioContextClass = window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioContextClass) return
@@ -52,6 +53,7 @@ const playSound = (type: 'move' | 'capture' | 'check' | 'invalid') => {
     // Audio Context is blocked or not supported
   }
 }
+
 
 // Custom modern vector SVG renderers for high-performance geometric chess pieces
 const ChessPieceSVG: React.FC<{ type: string; color: 'w' | 'b'; className?: string }> = ({
@@ -166,6 +168,7 @@ interface ChessboardProps {
   onMove?: (newFen: string, moveDetails: { from: string; to: string; sanitized: string; promotion?: string }) => void
   onMoveHistory?: (moves: string[]) => void
   disabled?: boolean
+  soundEnabled?: boolean
 }
 
 export const Chessboard: React.FC<ChessboardProps> = ({
@@ -173,6 +176,7 @@ export const Chessboard: React.FC<ChessboardProps> = ({
   onMove,
   onMoveHistory,
   disabled = false,
+  soundEnabled = true,
 }) => {
   const [game] = useState<Chess>(() => new Chess(fen))
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
@@ -223,9 +227,9 @@ export const Chessboard: React.FC<ChessboardProps> = ({
         const isCheck = game.inCheck()
 
         // Sound chime triggers
-        if (isCheck) playSound('check')
-        else if (isCapture) playSound('capture')
-        else playSound('move')
+        if (isCheck) playSound('check', soundEnabled)
+        else if (isCapture) playSound('capture', soundEnabled)
+        else playSound('move', soundEnabled)
 
         // Propagate move up
         if (onMove) {
@@ -242,9 +246,10 @@ export const Chessboard: React.FC<ChessboardProps> = ({
         }
       }
     } catch {
-      playSound('invalid')
+      playSound('invalid', soundEnabled)
     }
   }
+
 
   const handleSquareClick = (square: Square) => {
     if (disabled) return

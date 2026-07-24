@@ -71,8 +71,10 @@ type ConflictingCreateRepo(existing: GameRecord) =
 
 type MockBus() =
     let mutable enqueued = []
+    let mutable dequeued = []
     let mutable gameUpdates = []
     member _.Enqueued = enqueued
+    member _.Dequeued = dequeued
     member _.GameUpdates = gameUpdates
 
     interface IMessageBus with
@@ -103,6 +105,9 @@ type MockBus() =
             }
 
         member _.DequeueMatchmakingPair() = async { return [] }
+
+        member _.RemoveFromMatchmakingQueue user = async { dequeued <- user :: dequeued }
+
 
 type AppFactory(repo: IGameRepository, bus: IMessageBus) =
     inherit WebApplicationFactory<Program.Marker>()
@@ -446,6 +451,39 @@ let tests =
             Expect.equal bus.Enqueued [ ("player123", 1600) ] "Should have enqueued player123 with ELO 1600"
         }
 
+        testTask "DELETE /api/matchmaking - 200 OK and dequeues player when X-User-Id present" {
+            let repo = MockRepo (None, Ok ())
+            let (bus: MockBus) = MockBus ()
+            let factory = new AppFactory (repo, bus)
+            let client = factory.CreateClient ()
+
+            client.DefaultRequestHeaders.Add ("X-User-Id", "player123")
+
+            let req = new HttpRequestMessage (HttpMethod.Delete, "/api/matchmaking")
+            let! (response: System.Net.Http.HttpResponseMessage) = client.SendAsync req
+            let! body = response.Content.ReadAsStringAsync ()
+
+            Expect.equal response.StatusCode HttpStatusCode.OK (sprintf "Should return 200 OK. Body: %s" body)
+
+            Expect.equal bus.Dequeued [ "player123" ] "Should have dequeued player123"
+        }
+
+        testTask "DELETE /api/matchmaking - 400 Bad Request when X-User-Id header is missing" {
+            let repo = MockRepo (None, Ok ())
+            let (bus: MockBus) = MockBus ()
+            let factory = new AppFactory (repo, bus)
+            let client = factory.CreateClient ()
+
+            let req = new HttpRequestMessage (HttpMethod.Delete, "/api/matchmaking")
+            let! (response: System.Net.Http.HttpResponseMessage) = client.SendAsync req
+
+            Expect.equal
+                response.StatusCode
+                HttpStatusCode.BadRequest
+                "Should return 400 Bad Request when X-User-Id is missing"
+        }
+
+
         testTask "POST /api/games/{id}/create - 201 Created on valid game creation" {
             let repo = MockRepo (None, Ok ())
             let factory = new AppFactory (repo)
@@ -512,6 +550,9 @@ type SubscribingBus() =
             }
 
         member _.DequeueMatchmakingPair() = async { return [] }
+
+        member _.RemoveFromMatchmakingQueue _ = async { () }
+
 
 /// Hub context mock recording (target, method) pairs for every SignalR send.
 type RecordingHubContext() =

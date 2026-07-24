@@ -25,13 +25,29 @@ module Handlers =
                 task {
                     let userId =
                         match ctx.Request.Headers.TryGetValue ("X-User-Id") with
-                        | true, v -> v.ToString ()
+                        | true, v when not (System.String.IsNullOrWhiteSpace (v.ToString ())) -> v.ToString ()
                         | _ -> "anonymous"
 
                     do! bus.EnqueueMatchmaking (userId, req.Elo)
                     return! Response.withStatusCode 202 >> Response.ofJson {| Message = "Queued" |} <| ctx
                 }
         )
+
+    let cancelMatchmakingHandler (bus: IMessageBus) : HttpHandler =
+        fun ctx ->
+            task {
+                match ctx.Request.Headers.TryGetValue ("X-User-Id") with
+                | true, v when not (System.String.IsNullOrWhiteSpace (v.ToString ())) ->
+                    let userId = v.ToString ()
+                    do! MatchmakingUseCase.dequeue bus userId
+                    return! Response.withStatusCode 200 >> Response.ofJson {| Message = "Dequeued" |} <| ctx
+                | _ ->
+                    return!
+                        Response.withStatusCode 400
+                        >> Response.ofJson {| Error = "Missing X-User-Id header" |}
+                        <| ctx
+            }
+
 
     let playMoveHandler (repo: IGameRepository) (bus: IMessageBus) : HttpHandler =
         Request.mapJson (fun (reqDto: MoveRequestDto) ->

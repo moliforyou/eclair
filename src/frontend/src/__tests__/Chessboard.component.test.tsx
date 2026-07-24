@@ -113,4 +113,81 @@ describe('Chessboard component', () => {
     // The pawn is still on a7
     expect(square(container, 'a7').querySelector('svg')).not.toBeNull()
   })
+
+  test('does not play sound when soundEnabled is false', () => {
+    let audioCreated = false
+    const originalAudioContext = window.AudioContext
+    class MockAudioContext {
+      constructor() {
+        audioCreated = true
+      }
+      createOscillator() {
+        return {
+          connect: () => {},
+          type: '',
+          frequency: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+          start: () => {},
+          stop: () => {},
+        }
+      }
+      createGain() {
+        return {
+          connect: () => {},
+          gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+        }
+      }
+      destination = {}
+      currentTime = 0
+    }
+    // @ts-expect-error mocking AudioContext
+    window.AudioContext = MockAudioContext
+
+    try {
+      const { container } = render(<Chessboard fen={START_FEN} soundEnabled={false} />)
+      fireEvent.click(square(container, 'e2'))
+      fireEvent.click(square(container, 'e4'))
+      expect(audioCreated).toBe(false)
+    } finally {
+      window.AudioContext = originalAudioContext
+    }
+  })
+
+  test('plays sound when soundEnabled is true', () => {
+    let audioCreated = false
+    const originalAudioContext = window.AudioContext
+    class MockAudioContext {
+      constructor() {
+        audioCreated = true
+      }
+      createOscillator() {
+        return {
+          connect: () => {},
+          type: '',
+          frequency: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+          start: () => {},
+          stop: () => {},
+        }
+      }
+      createGain() {
+        return {
+          connect: () => {},
+          gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+        }
+      }
+      destination = {}
+      currentTime = 0
+    }
+    // @ts-expect-error mocking AudioContext
+    window.AudioContext = MockAudioContext
+
+    try {
+      const { container } = render(<Chessboard fen={START_FEN} soundEnabled={true} />)
+      fireEvent.click(square(container, 'e2'))
+      fireEvent.click(square(container, 'e4'))
+      expect(audioCreated).toBe(true)
+    } finally {
+      window.AudioContext = originalAudioContext
+    }
+  })
 })
+

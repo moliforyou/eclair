@@ -43,6 +43,9 @@ type MockBus() =
 
         member _.DequeueMatchmakingPair() = async { return [] }
 
+        member _.RemoveFromMatchmakingQueue _ = async { () }
+
+
 [<Tests>]
 let tests =
     testList "PlayMoveUseCase Tests" [
@@ -223,13 +226,53 @@ let matchmakingTests =
                         }
 
                     member _.DequeueMatchmakingPair() = async { return [] }
+                    member _.RemoveFromMatchmakingQueue _ = async { () }
                 }
+
 
             do! MatchmakingUseCase.enqueue bus "user1" 1500
             Expect.equal enqueuedUser (Some "user1") "Should enqueue user1"
             Expect.equal enqueuedElo 1500 "Should enqueue with ELO 1500"
         }
+
+        testAsync "Dequeues player successfully" {
+            let mutable dequeuedUser = None
+
+            let bus =
+                { new IMessageBus with
+                    member _.PublishMovePlayed(_, _) = async { () }
+                    member _.PublishGameUpdated _ = async { () }
+
+                    member _.EnqueueMatchmaking(_, _) = async { () }
+
+                    member _.SubscribeMovePlayed _ =
+                        async {
+                            return
+                                { new System.IDisposable with
+                                    member _.Dispose() = ()
+                                }
+                        }
+
+                    member _.PublishMatchFound(_, _, _) = async { () }
+
+                    member _.SubscribeMatchFound _ =
+                        async {
+                            return
+                                { new System.IDisposable with
+                                    member _.Dispose() = ()
+                                }
+                        }
+
+                    member _.DequeueMatchmakingPair() = async { return [] }
+
+                    member _.RemoveFromMatchmakingQueue user = async { dequeuedUser <- Some user }
+                }
+
+            do! MatchmakingUseCase.dequeue bus "user1"
+            Expect.equal dequeuedUser (Some "user1") "Should dequeue user1"
+        }
     ]
+
 
 [<Tests>]
 let allTests = testList "ChessPlatform.Application" [ tests; matchmakingTests ]

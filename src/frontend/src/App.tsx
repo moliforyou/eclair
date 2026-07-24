@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+
 import { Chess } from 'chess.js'
 import { Chessboard } from './components/Chessboard'
 import { Button } from './components/ui/Button'
@@ -36,7 +37,60 @@ interface ServerMoveDto {
   promotion?: string | null
 }
 
+// Helper to safely extract coordinates from various tuple/object structures
+const getPosCoords = (pos: unknown): { row: number, col: number } | null => {
+  if (!pos) return null;
+  if (Array.isArray(pos)) {
+    return { col: pos[0] as number, row: pos[1] as number };
+  }
+  if (typeof pos === 'object') {
+    const obj = pos as Record<string, unknown>;
+    const col = ('Item1' in obj) ? obj.Item1 : ('item1' in obj) ? obj.item1 : null;
+    const row = ('Item2' in obj) ? obj.Item2 : ('item2' in obj) ? obj.item2 : null;
+    if (typeof col === 'number' && typeof row === 'number') {
+      return { col, row };
+    }
+  }
+  return null;
+}
+
+// Helper to rebuild move records from a server Moves array
+const buildMovesFromServer = (serverMoves: ServerMoveDto[], activeWhite: string, activeBlack: string): MoveRecord[] => {
+  // Replay all moves on a fresh board to get algebraic notation
+  const tempGame = new Chess()
+  const algMoves: string[] = []
+  for (const m of serverMoves) {
+    try {
+      const fromCoords = getPosCoords(m.From ?? m.from);
+      const toCoords = getPosCoords(m.To ?? m.to);
+      if (!fromCoords || !toCoords) continue;
+
+      const promotion = m.Promotion ?? m.promotion
+      const result = tempGame.move({
+        from: coordsToSquare(fromCoords.row, fromCoords.col),
+        to: coordsToSquare(toCoords.row, toCoords.col),
+        promotion: promotion ? promotion.toLowerCase() : undefined,
+      })
+      if (result) algMoves.push(result.san)
+    } catch {
+      // skip unrecognised moves
+    }
+  }
+  const records: MoveRecord[] = []
+  for (let i = 0; i < algMoves.length; i += 2) {
+    records.push({
+      num: Math.floor(i / 2) + 1,
+      white: algMoves[i],
+      black: algMoves[i + 1] || undefined,
+      whiteTelemetry: `${activeWhite || 'White'} played ${algMoves[i]}`,
+      blackTelemetry: algMoves[i + 1] ? `${activeBlack || 'Black'} played ${algMoves[i + 1]}` : undefined,
+    })
+  }
+  return records
+}
+
 function App() {
+
   const [screen, setScreen] = useState<'landing' | 'game'>('landing')
   const [gameId, setGameId] = useState<string | null>(null)
   const [playerId, setPlayerId] = useState(() => {
@@ -65,138 +119,75 @@ function App() {
   const connectionRef = useRef<HubConnection | null>(null)
   const stopPromiseRef = useRef<Promise<unknown>>(Promise.resolve())
 
-  // Sync state and establish SignalR connection when gameId or playerId changes
+  // Helper to update state from a FEN string (for initial HTTP sync)
+  const updateGameState = useCallback((newFen: string, serverMoves?: ServerMoveDto[], status?: string, white?: string, black?: string) => {
+    setFen(newFen)
+    const localGame = new Chess(newFen)
+    setGame(localGame)
+    setGameStatus(status ?? 'InProgress')
+    if (white) setWhitePlayerId(white)
+    if (black) setBlackPlayerId(black)
+
+    const activeWhite = white || whitePlayerId
+    const activeBlack = black || blackPlayerId
+
+    if (serverMoves && serverMoves.length > 0) {
+      setMoves(buildMovesFromServer(serverMoves, activeWhite, activeBlack))
+    } else {
+      // Fallback: no server move history available
+      setMoves([])
+    }
+  }, [whitePlayerId, blackPlayerId])
+
+  // Initial HTTP sync with database
+  const syncGame = useCallback(async () => {
+    if (!gameId) return
+    try {
+      const getRes = await fetch(`/api/games/${gameId}`)
+      if (getRes.status === 404) {
+        // Game does not exist yet, call create endpoint to initialize it in Postgres
+        const createRes = await fetch(`/api/games/${gameId}/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ WhitePlayerId: playerId, BlackPlayerId: 'computer' })
+        })
+        if (createRes.ok) {
+          const freshRes = await fetch(`/api/games/${gameId}`)
+          if (freshRes.ok) {
+            const data = await freshRes.json()
+            updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
+          }
+        }
+      } else if (getRes.ok) {
+        const data = await getRes.json()
+        updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
+      }
+    } catch (err) {
+      console.error('Failed to sync game state with backend:', err)
+    }
+  }, [gameId, playerId, updateGameState])
+
+  // Establish SignalR connection when playerId changes
   useEffect(() => {
     let isMounted = true
 
-    // Helper to safely extract coordinates from various tuple/object structures
-    const getPosCoords = (pos: unknown): { row: number, col: number } | null => {
-      if (!pos) return null;
-      if (Array.isArray(pos)) {
-        return { col: pos[0] as number, row: pos[1] as number };
-      }
-      if (typeof pos === 'object') {
-        const obj = pos as Record<string, unknown>;
-        const col = ('Item1' in obj) ? obj.Item1 : ('item1' in obj) ? obj.item1 : null;
-        const row = ('Item2' in obj) ? obj.Item2 : ('item2' in obj) ? obj.item2 : null;
-        if (typeof col === 'number' && typeof row === 'number') {
-          return { col, row };
-        }
-      }
-      return null;
-    }
-
-    // Helper to rebuild move records from a server Moves array
-    const buildMovesFromServer = (serverMoves: ServerMoveDto[], activeWhite: string, activeBlack: string): MoveRecord[] => {
-      // Replay all moves on a fresh board to get algebraic notation
-      const tempGame = new Chess()
-      const algMoves: string[] = []
-      for (const m of serverMoves) {
-        try {
-          const fromCoords = getPosCoords(m.From ?? m.from);
-          const toCoords = getPosCoords(m.To ?? m.to);
-          if (!fromCoords || !toCoords) continue;
-
-          const promotion = m.Promotion ?? m.promotion
-          const result = tempGame.move({
-            from: coordsToSquare(fromCoords.row, fromCoords.col),
-            to: coordsToSquare(toCoords.row, toCoords.col),
-            promotion: promotion ? promotion.toLowerCase() : undefined,
-          })
-          if (result) algMoves.push(result.san)
-        } catch {
-          // skip unrecognised moves
-        }
-      }
-      const records: MoveRecord[] = []
-      for (let i = 0; i < algMoves.length; i += 2) {
-        records.push({
-          num: Math.floor(i / 2) + 1,
-          white: algMoves[i],
-          black: algMoves[i + 1] || undefined,
-          whiteTelemetry: `${activeWhite || 'White'} played ${algMoves[i]}`,
-          blackTelemetry: algMoves[i + 1] ? `${activeBlack || 'Black'} played ${algMoves[i + 1]}` : undefined,
-        })
-      }
-      return records
-    }
-
-    // Helper to update state from a FEN string (for initial HTTP sync)
-    const updateGameState = (newFen: string, serverMoves?: ServerMoveDto[], status?: string, white?: string, black?: string) => {
-      setFen(newFen)
-      const localGame = new Chess(newFen)
-      setGame(localGame)
-      setGameStatus(status ?? 'InProgress')
-      if (white) setWhitePlayerId(white)
-      if (black) setBlackPlayerId(black)
-
-      const activeWhite = white || whitePlayerId
-      const activeBlack = black || blackPlayerId
-
-      if (serverMoves && serverMoves.length > 0) {
-        setMoves(buildMovesFromServer(serverMoves, activeWhite, activeBlack))
-      } else {
-        // Fallback: no server move history available
-        setMoves([])
-      }
-    }
-
-    // 1. Initial HTTP sync with database
-    const syncGame = async () => {
-      if (!gameId) return
-      try {
-        const getRes = await fetch(`/api/games/${gameId}`)
-        if (getRes.status === 404) {
-          // Game does not exist yet, call create endpoint to initialize it in Postgres
-          const createRes = await fetch(`/api/games/${gameId}/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ WhitePlayerId: playerId, BlackPlayerId: 'computer' })
-          })
-          if (createRes.ok) {
-            const freshRes = await fetch(`/api/games/${gameId}`)
-            if (freshRes.ok && isMounted) {
-              const data = await freshRes.json()
-              updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
-            }
-          }
-        } else if (getRes.ok && isMounted) {
-          const data = await getRes.json()
-          updateGameState(data.Fen, data.Moves, data.Status, data.WhitePlayerId, data.BlackPlayerId)
-        }
-      } catch (err) {
-        console.error('Failed to sync game state with backend:', err)
-      }
-    }
-
-    if (gameId) {
-      syncGame()
-    }
-
-    // 2. Establish SignalR Connection.
     // Deferred via setTimeout so StrictMode's mount/unmount/mount cycle cancels the
-    // first attempt before it reaches the network — two connections racing (one
-    // stopped mid-negotiation) can wedge the survivor's websocket upgrade for ~20s
+
+    // first attempt before it reaches the network
     let connection: HubConnection | null = null
 
     const startTimer = setTimeout(async () => {
-      // Never overlap with the previous connection's teardown: concurrent
-      // negotiations are what triggered the wedge above
       await stopPromiseRef.current
       if (!isMounted) return
       setConnectionStatus('connecting')
 
       const conn = new HubConnectionBuilder()
-        // The Bun-run Vite dev server cannot proxy WebSocket upgrades, so the default
-        // WebSocket attempt stalls ~20s before falling back; use SSE directly in dev
         .withUrl('/hubs/game', import.meta.env.DEV ? { transport: HttpTransportType.ServerSentEvents } : {})
         .withAutomaticReconnect()
         .build()
       connection = conn
       connectionRef.current = conn
 
-      // Group memberships are keyed to the connection ID, so they must be
-      // re-established after every automatic reconnect
       conn.onreconnecting(() => {
         if (isMounted) setConnectionStatus('connecting')
       })
@@ -206,7 +197,7 @@ function App() {
         conn.invoke('JoinLobby', playerId).catch(console.error)
         if (gameId) {
           conn.invoke('JoinGame', gameId)
-            .then(() => syncGame()) // pull any moves missed while disconnected
+            .then(() => { void syncGame() }) // pull any moves missed while disconnected
             .catch(console.error)
         }
       })
@@ -216,7 +207,6 @@ function App() {
 
       conn.on('MovePlayed', (data: { fen: string, turn: 'w' | 'b', whitePlayerId: string, blackPlayerId: string, moves: ServerMoveDto[], status: string }) => {
         if (isMounted) {
-          // Received real-time move broadcast from backend!
           updateGameState(data.fen, data.moves, data.status, data.whitePlayerId, data.blackPlayerId)
         }
       })
@@ -227,7 +217,11 @@ function App() {
           setIsQueued(false)
           setGameId(data.gameId)
           setScreen('game')
-          // The gameId state change will trigger re-render and re-sync
+          if (conn.state === HubConnectionState.Connected) {
+            conn.invoke('JoinGame', data.gameId)
+              .then(() => { void syncGame() })
+              .catch(console.error)
+          }
         }
       })
 
@@ -240,7 +234,7 @@ function App() {
           setConnectionStatus('connected')
           if (gameId) {
             conn.invoke('JoinGame', gameId)
-              .then(() => syncGame()) // re-sync so moves made before the group join aren't missed
+              .then(() => { void syncGame() })
               .catch(console.error)
           }
           conn.invoke('JoinLobby', playerId).catch(console.error)
@@ -258,8 +252,18 @@ function App() {
         stopPromiseRef.current = connection.stop().catch(() => {})
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- whitePlayerId/blackPlayerId are stale-closure fallbacks only; adding them would reconnect SignalR on every ID state change which is incorrect
-  }, [gameId, playerId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerId])
+
+  // Join game group whenever active gameId changes without tearing down socket
+  useEffect(() => {
+    const conn = connectionRef.current
+    if (conn && conn.state === HubConnectionState.Connected && gameId) {
+      conn.invoke('JoinGame', gameId)
+        .then(() => { void syncGame() })
+        .catch(console.error)
+    }
+  }, [gameId, syncGame])
 
   // Measure real round-trip latency against the hub every 3s
   useEffect(() => {
@@ -442,9 +446,20 @@ function App() {
   }
 
   // Cancel matchmaking search
-  const handleCancelMatch = () => {
+  const handleCancelMatch = async () => {
     setIsQueued(false)
+    try {
+      await fetch('/api/matchmaking', {
+        method: 'DELETE',
+        headers: {
+          'X-User-Id': playerId
+        }
+      })
+    } catch (err) {
+      console.error('Error cancelling matchmaking queue:', err)
+    }
   }
+
 
   // Command input handler (Algebraic chess terminal commands, e.g. e4, Nf3)
   const handleSendCommand = async (e: React.FormEvent) => {
@@ -637,12 +652,16 @@ function App() {
                 value={playerId}
                 onChange={(e) => {
                   const val = e.target.value
+                  if (isQueued) {
+                    handleCancelMatch()
+                  }
                   setPlayerId(val)
                   localStorage.setItem('chess_player_id', val)
                 }}
                 placeholder="Enter Player User ID"
                 className="h-11 text-sm bg-black/40 border-pure-light/20 text-pure-light focus:border-btc-orange"
               />
+
             </div>
 
             <div className="border-t border-pure-light/5 pt-6 space-y-4">
@@ -780,7 +799,9 @@ function App() {
                   fen={fen}
                   onMove={handleBoardMove}
                   disabled={false}
+                  soundEnabled={soundEnabled}
                 />
+
                 {/* Game-over overlay */}
                 {gameStatus && gameStatus !== 'InProgress' && gameStatus !== 'Check' && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm rounded-xl z-20">

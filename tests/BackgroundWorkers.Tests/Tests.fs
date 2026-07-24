@@ -59,6 +59,9 @@ type MockMessageBus() =
 
         member _.DequeueMatchmakingPair() = async { return dequeuedPair }
 
+        member _.RemoveFromMatchmakingQueue _ = async { () }
+
+
 // Helper to wait for the worker to subscribe deterministically
 let waitForSubscription (bus: MockMessageBus) =
     async {

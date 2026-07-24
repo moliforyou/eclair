@@ -49,10 +49,12 @@ module Program =
 
         let falcoEndpoints = [
             post "/api/matchmaking" (Handlers.matchmakingHandler bus)
+            delete "/api/matchmaking" (Handlers.cancelMatchmakingHandler bus)
             post "/api/games/{id}/move" (Handlers.playMoveHandler repo bus)
             post "/api/games/{id}/create" (Handlers.createGameHandler repo bus)
             get "/api/games/{id}" (Handlers.getGameHandler repo)
         ]
+
 
         app.UseFalco (falcoEndpoints) |> ignore
 

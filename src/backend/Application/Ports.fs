@@ -70,3 +70,6 @@ type IMessageBus =
 
     /// Dequeues up to two players from the matchmaking queue.
     abstract member DequeueMatchmakingPair: unit -> Async<(string * int) list>
+
+    /// Removes a player from the matchmaking queue.
+    abstract member RemoveFromMatchmakingQueue: userId: string -> Async<unit>
