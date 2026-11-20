@@ -1,0 +1,23 @@
+{
+  "extraKnownMarketplaces": {
+    "cursor-plugins": {
+      "source": { "source": "github", "repo": "cursor/plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "pstack@cursor-plugins": true,
+    "superpowers@synced": false
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'This repository runs under pstack. At the start of every task, invoke the pstack:poteto-mode skill and follow its playbooks.'"
+          }
+        ]
+      }
+    ]
+  }
+}
