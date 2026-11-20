@@ -95,13 +95,13 @@ These are probes on the owner's Mac, 2026-11-20. Each PR remeasures its own base
 
 ## P3: `eclair` CLI core, replacing the Makefile
 
-- [ ] Depends on: P2.
-- [ ] Files: new `tools/eclair/` (an F# console app in `ChessPlatform.slnx` with no `ProjectReference`). New `eclair` wrapper at the repo root. New `tests/Eclair.Tests/`. Delete `Makefile` and `scripts/check-layers.sh`. Edit `.claude/hooks/before-stop.sh`, `.claude/hooks/after-edit.sh` (the layer call only, since Fantomas stays direct), `.githooks/pre-commit`, `.github/workflows/ci.yml`, and `CLAUDE.md`.
-- [ ] Change: add `build`, `test [--unit|--infra]`, `format [--check]`, `lint`, `layers [fsproj…]`, `--json` and `--help`. The `layers` command keeps the rules as one table, and the table already lists `Contracts`, `Client` and the no-reference rule for `tools/eclair`. The wrapper rebuilds `tools/eclair` only when its sources change, then runs the built DLL.
-- [ ] Result: every Makefile target has a matching `./eclair` command. The hooks, the pre-commit hook and CI each call `./eclair` in one line.
-- [ ] Unit: `Eclair.Tests` runs `layers` against fixture `.fsproj` files. One fixture has an allowed reference, one has a forbidden reference, one is an unknown project, and one is a package-free layer that has a package. Each case gives the expected exit code and message.
-- [ ] Live: add a forbidden `ProjectReference` from Domain to Application. `./eclair layers` exits 1 and names the rule. Revert it, and `./eclair layers` exits 0. Make a real `.fs` edit and finish a session, and confirm that the Stop hook runs `./eclair` and passes. CI is green on the PR.
-- [ ] Perf: metric is wall time. On a warm wrapper, `./eclair layers` fails above 0.5 s, against a 0.04 s baseline for `scripts/check-layers.sh`. `./eclair test --unit` fails above 7.2 s, which is 6.50 s plus 10%.
+- [x] Depends on: P2.
+- [x] Files: new `tools/eclair/` (an F# console app in `ChessPlatform.slnx` with no `ProjectReference`). New `eclair` wrapper at the repo root. New `tests/Eclair.Tests/`. Delete `Makefile` and `scripts/check-layers.sh`. Edit `.claude/hooks/before-stop.sh`, `.claude/hooks/after-edit.sh` (the layer call only, since Fantomas stays direct), `.githooks/pre-commit`, `.github/workflows/ci.yml`, and `CLAUDE.md`.
+- [x] Change: add `build`, `test [--unit|--infra]`, `format [--check]`, `lint`, `layers [fsproj…]`, `--json` and `--help`. Add `env up`, `env down` and `run` as thin passthroughs of the Makefile targets, so deleting the Makefile drops no command, and P4 builds them out. Add `setup`, which replaces the Makefile's `install` and `hooks`. The `layers` command keeps the rules as one table, and the table already lists `Contracts`, `Client` and the no-reference rule for `tools/eclair`. The wrapper rebuilds `tools/eclair` only when its sources change, then runs the built DLL.
+- [x] Result: every Makefile target has a matching `./eclair` command. The hooks, the pre-commit hook and CI each call `./eclair` in one line.
+- [x] Unit: `Eclair.Tests` runs `layers` against fixture `.fsproj` files. One fixture has an allowed reference, one has a forbidden reference, one is an unknown project, and one is a package-free layer that has a package. Each case gives the expected exit code and message.
+- [x] Live: add a forbidden `ProjectReference` from Domain to Application. `./eclair layers` exits 1 and names the rule. Revert it, and `./eclair layers` exits 0. Make a real `.fs` edit and finish a session, and confirm that the Stop hook runs `./eclair` and passes. CI is green on the PR.
+- [x] Perf: metric is wall time. On a warm wrapper, `./eclair layers` fails above 0.5 s, against a 0.04 s baseline for `scripts/check-layers.sh`. `./eclair test --unit` fails above 7.30 s, which is the remeasured 6.64 s plus 10%.
 
 ## P4: `eclair env`, `run` and `db`
 
