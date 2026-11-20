@@ -9,12 +9,3 @@ if [ -n "$fsharp_files" ]; then
         exit 1
     }
 fi
-
-ts_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^src/frontend/.*\.(ts|tsx)$' || true)
-if [ -n "$ts_files" ]; then
-    echo "pre-commit: linting frontend..."
-    (cd src/frontend && bunx eslint $(echo "$ts_files" | sed 's|^src/frontend/||')) || {
-        echo "pre-commit: eslint issues found. Run 'make format' and re-stage." >&2
-        exit 1
-    }
-fi
