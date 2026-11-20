@@ -22,6 +22,9 @@ jobs:
       - name: Check formatting
         run: dotnet fantomas src tests && git diff --exit-code -- src tests
 
+      - name: Check layer rules
+        run: scripts/check-layers.sh
+
       - name: Build
         run: dotnet build ChessPlatform.slnx
 

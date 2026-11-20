@@ -1,7 +1,10 @@
 {
   "extraKnownMarketplaces": {
     "cursor-plugins": {
-      "source": { "source": "github", "repo": "cursor/plugins" }
+      "source": {
+        "source": "github",
+        "repo": "cursor/plugins"
+      }
     }
   },
   "enabledPlugins": {
@@ -15,6 +18,32 @@
           {
             "type": "command",
             "command": "echo 'This repository runs under pstack. At the start of every task, invoke the pstack:poteto-mode skill and follow its playbooks.'"
+          },
+          {
+            "type": "command",
+            "command": "command -v dotnet >/dev/null && dotnet tool restore >/dev/null 2>&1; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/after-edit.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/before-stop.sh",
+            "timeout": 900
           }
         ]
       }

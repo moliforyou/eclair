@@ -32,4 +32,4 @@ Flow: wait for `LINK: CONNECTED` in body text → click "Find Opponent" on both 
 
 ## Gates
 
-`make build` (dotnet + tsc), `make lint` (fantomas --check + eslint), `make test-unit` (Expecto suites + `bun test`). Run `make format` after editing F#.
+`make build` (dotnet + tsc), `make lint` (fantomas --check + eslint), `make test-unit` (Expecto suites + `bun test`).
