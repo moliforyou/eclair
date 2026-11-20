@@ -1,11 +1,2 @@
 #!/bin/sh
-set -e
-
-fsharp_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(fs|fsi|fsx)$' || true)
-if [ -n "$fsharp_files" ]; then
-    echo "pre-commit: checking F# formatting..."
-    dotnet fantomas --check $fsharp_files || {
-        echo "pre-commit: F# formatting issues found. Run 'make format' and re-stage." >&2
-        exit 1
-    }
-fi
+exec ./eclair lint
