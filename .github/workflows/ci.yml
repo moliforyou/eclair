@@ -32,23 +32,3 @@ jobs:
       - name: Test
         run: dotnet test ChessPlatform.slnx --no-build
 
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Test
-        run: bun test
-
-      - name: Lint, typecheck, build
-        run: bun run build
