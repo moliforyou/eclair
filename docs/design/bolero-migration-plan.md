@@ -68,9 +68,9 @@ These are probes on the owner's Mac, 2026-11-20. Each PR remeasures its own base
 
 ## P1: React reference screenshots
 
-- [ ] Depends on: trunk.
-- [ ] Files: `docs/design/reference/react/*.png` and `docs/design/reference/react/perf.md`. The driving script stays in the scratchpad and is not committed.
-- [ ] Change: capture the seven states from the design doc using the current stack (`make up`, `make run-api`, `bun run dev`). Use Playwright for Bun 1.63, which matches the cached `chromium-1243`. Use a 1280×800 viewport with two browser contexts.
+- [x] Depends on: trunk.
+- [x] Files: `docs/design/reference/react/*.png` and `docs/design/reference/react/perf.md`. The driving script stays in the scratchpad and is not committed.
+- [x] Change: capture the seven states from the design doc using the current stack (`make up`, `make run-api`, `bun run dev`). Use Playwright for Bun 1.63, which matches the cached `chromium-1243`. Use a 1280×800 viewport with two browser contexts.
   - Landing.
   - Queued.
   - Mid-game after `e4 e5 Nf3 Nc6`.
@@ -78,20 +78,20 @@ These are probes on the owner's Mac, 2026-11-20. Each PR remeasures its own base
   - Promotion picker: `a4 b5 axb5 a6 bxa6 Bb7 axb7 Nc6`, then click b7 and a8.
   - Check: `e4 f5 Qh5+`.
   - Game over: `f3 e5 g4 Qh4#`.
-- [ ] Result: seven PNGs, plus `perf.md` with the React cold-load bytes transferred, the time to interactive, and the p50 and p95 click-to-highlight times over 20 clicks.
-- [ ] Unit: N/A. This PR adds no code.
-- [ ] Live: each PNG shows its named state. Pass when the owner can name each state from the image alone.
-- [ ] Perf: this PR records the React baseline that P8 and P11 compare against. Use the same probe as prototype finding 7.
+- [x] Result: seven PNGs, plus `perf.md` with the React cold-load bytes transferred, the time to interactive, and the p50 and p95 click-to-highlight times over 20 clicks.
+- [x] Unit: N/A. This PR adds no code.
+- [x] Live: each PNG shows its named state. Pass when the owner can name each state from the image alone.
+- [x] Perf: this PR records the React baseline that P8 and P11 compare against. Use the same probe as prototype finding 7.
 
 ## P2: Delete React and its tooling
 
-- [ ] Depends on: P1.
-- [ ] Files: delete `src/frontend/` and `.claude/skills/verify/`. Edit `.githooks/pre-commit` to remove the ESLint block. Edit `.github/workflows/ci.yml` to remove the `frontend` job. Edit `.gitignore` to remove the Node and Bun entries. Edit `Makefile` to remove `install`'s Bun line, the `tsc`, `bun test` and `eslint` lines, and `run-web`. Edit `CLAUDE.md` to remove the proxy-socket gotcha and the `verify` pointer, and to say "no browser UI until P10".
-- [ ] Change: one subtraction.
-- [ ] Result: the repo has no Node toolchain. `make build`, `make test-backend` and `make lint` still pass.
-- [ ] Unit: `make test-backend` is green.
-- [ ] Live: `git ls-files | rg -i 'package\.json|bun\.lock|node_modules|\.tsx?$|vite|eslint'` prints nothing. `make run-api` serves `GET /api/games/x` with a 404.
-- [ ] Perf: N/A. This PR only removes code, and CI loses a job.
+- [x] Depends on: P1.
+- [x] Files: delete `src/frontend/` and `.claude/skills/verify/`. Edit `.githooks/pre-commit` to remove the ESLint block. Edit `.github/workflows/ci.yml` to remove the `frontend` job. Edit `.gitignore` to remove the Node and Bun entries. Edit `Makefile` to remove `install`'s Bun line, the `tsc`, `bun test` and `eslint` lines, and `run-web`. Edit `CLAUDE.md` to remove the proxy-socket gotcha and the `verify` pointer, and to say "no browser UI until P10".
+- [x] Change: one subtraction.
+- [x] Result: the repo has no Node toolchain. `make build`, `make test-backend` and `make lint` still pass.
+- [x] Unit: `make test-backend` is green.
+- [x] Live: `git ls-files | rg -i 'package\.json|bun\.lock|node_modules|\.tsx?$|vite|eslint'` prints nothing. `make run-api` serves `GET /api/games/x` with a 404.
+- [x] Perf: N/A. This PR only removes code, and CI loses a job.
 
 ## P3: `eclair` CLI core, replacing the Makefile
 
@@ -194,7 +194,7 @@ These are probes on the owner's Mac, 2026-11-20. Each PR remeasures its own base
 - [ ] Result: every move interaction runs in the browser without a round trip.
 - [ ] Unit: `Client.Tests` checks that selecting a piece yields Domain's legal targets, that a click on a target emits exactly one move request, that an illegal click emits none, that nothing is selectable when it is not your turn, and that the promotion flow and its cancel work. A typed `Nf3` emits the move, and a typed `Nf9` shows an error.
 - [ ] Live: verify journeys cover castling on both sides, en passant, promotion to a knight, and check. A request counter shows that an illegal attempt sends zero requests.
-- [ ] Perf: metric is click-to-highlight p50 over 20 clicks. The baseline is React's number in P1's `perf.md`. Fail above 100 ms or above React's p50, whichever is lower. The prototype measured 33 ms.
+- [ ] Perf: metric is click-to-highlight timed inside the page, p50 over 20 clicks, with the in-page probe from P1's `perf.md`. It runs from the click event's `timeStamp` to the next frame after the highlight reaches the DOM. React's baseline is 15.7 ms, one frame at 60 Hz. Fail above 33 ms, which is two frames. Do not gate on the Playwright click time, because it has a floor of about 33 ms for any client.
 
 ## P12: Client matchmaking and game end
 
