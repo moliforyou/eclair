@@ -139,6 +139,7 @@ module Game =
         let (tf, tr) = targetSquare
 
         let pawnDir = pawnDirection attackerColor
+
         let pawnAttack =
             [ (tf - 1, tr - pawnDir); (tf + 1, tr - pawnDir) ]
             |> List.exists (fun pos ->

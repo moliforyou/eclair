@@ -147,6 +147,7 @@ let tests =
 
         testAsync "Plays a move automatically when it is the computer's turn" {
             let state = Game.newGame ()
+
             let whiteMove: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)

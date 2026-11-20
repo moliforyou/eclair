@@ -99,9 +99,7 @@ let pawnTests =
 
         test "capture" {
             let state =
-                Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap
-                |> play
+                Game.newGame () |> play <| (4, 1) <| (4, 3) |> unwrap |> play
                 <| (3, 6)
                 <| (3, 4)
                 |> unwrap
@@ -112,9 +110,7 @@ let pawnTests =
 
         test "en passant" {
             let state =
-                Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap
-                |> play
+                Game.newGame () |> play <| (4, 1) <| (4, 3) |> unwrap |> play
                 <| (0, 6)
                 <| (0, 5)
                 |> unwrap
@@ -232,12 +228,7 @@ let kingTests =
             let state = FenParser.parse fen |> unwrap
 
             let result =
-                play state (4, 0) (5, 0)
-                |> unwrap
-                |> play
-                <| (0, 6)
-                <| (0, 5)
-                |> unwrap
+                play state (4, 0) (5, 0) |> unwrap |> play <| (0, 6) <| (0, 5) |> unwrap
 
             Expect.isFalse "" result.CastlingRights.WhiteKingSide
             Expect.isFalse "" result.CastlingRights.WhiteQueenSide
@@ -262,9 +253,7 @@ let statusTests =
     testList "Game Status" [
         test "Scholar's Mate" {
             let state =
-                Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap
-                |> play
+                Game.newGame () |> play <| (4, 1) <| (4, 3) |> unwrap |> play
                 <| (4, 6)
                 <| (4, 4)
                 |> unwrap
@@ -340,6 +329,7 @@ let errorTests =
         test "game already over" {
             let fen = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
             let mateState = FenParser.parse "k7/2Q5/1K6/8/8/8/8/8 b - - 0 1" |> unwrap
+
             let mateState = {
                 mateState with
                     Status = Checkmate White
@@ -364,6 +354,7 @@ let propertyTests =
         test "piece count never exceeds 32" {
             let state = Game.newGame ()
             Expect.isTrue "" (Map.count state.Board <= 32)
+
             let state2 =
                 state |> play <| (4, 1) <| (4, 3) |> unwrap |> play <| (4, 6) <| (4, 4)
                 |> unwrap
