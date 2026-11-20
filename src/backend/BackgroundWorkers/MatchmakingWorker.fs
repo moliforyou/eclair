@@ -58,11 +58,9 @@ type MatchmakingWorker(logger: ILogger<MatchmakingWorker>, repo: IGameRepository
                                 do! bus.EnqueueMatchmaking (p1, elo1)
                                 do! bus.EnqueueMatchmaking (p2, elo2)
                         | [ (p, elo) ] ->
-                            // Dequeue pops up to two entries; a lone player must be put back to wait for an opponent
                             do! bus.EnqueueMatchmaking (p, elo)
                             do! Async.Sleep 2000
                         | [ (p1, elo1); (p2, _) ] when p1 = p2 ->
-                            // Same player popped twice; requeue one entry so they keep waiting
                             do! bus.EnqueueMatchmaking (p1, elo1)
                             do! Async.Sleep 2000
                         | _ -> do! Async.Sleep 2000

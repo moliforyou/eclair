@@ -20,7 +20,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Check formatting
-        run: dotnet fantomas --check src tests
+        run: dotnet fantomas src tests && git diff --exit-code -- src tests
 
       - name: Build
         run: dotnet build ChessPlatform.slnx
@@ -47,6 +47,5 @@ jobs:
       - name: Test
         run: bun test
 
-      # bun run build = eslint + tsc -b + vite build
       - name: Lint, typecheck, build
         run: bun run build

@@ -40,7 +40,6 @@ type SignalRMoveBroadcaster
                         fen
                     )
 
-                    // Broadcast to SignalR group gameId
                     let status =
                         match record.State.Status with
                         | ChessPlatform.Domain.InProgress -> "InProgress"

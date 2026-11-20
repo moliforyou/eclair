@@ -158,7 +158,6 @@ module Handlers =
 
                         match result with
                         | Ok _ ->
-                            // Notify subscribers of game initialization
                             do! bus.PublishGameUpdated gameId
 
                             return!

@@ -3,11 +3,9 @@ namespace ChessPlatform.BackgroundWorkers
 open ChessPlatform.Domain
 
 module Engine =
-    /// Represents an abstract interface to a chess engine (e.g., Stockfish, Random)
     type IComputerEngine =
         abstract member GetBestMove: state: GameState -> Async<MoveRequest option>
 
-    /// A fallback engine that plays random legal moves (used temporarily instead of Stockfish).
     type RandomEngine() =
         interface IComputerEngine with
             member _.GetBestMove(state: GameState) =

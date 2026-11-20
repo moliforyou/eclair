@@ -1,6 +1,5 @@
 <Project>
   <PropertyGroup>
-   <!-- Code Quality & Linting -->
     <AnalysisLevel>latest-all</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Nullable>enable</Nullable>

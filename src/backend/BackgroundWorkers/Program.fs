@@ -37,4 +37,4 @@ module Program =
 
         builder.Build().Run ()
 
-        0 // exit code
+        0
