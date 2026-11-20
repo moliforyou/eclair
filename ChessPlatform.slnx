@@ -29,6 +29,9 @@
   <Folder Name="/tests/Domain.Tests/">
     <Project Path="tests/Domain.Tests/ChessPlatform.Domain.Tests.fsproj" />
   </Folder>
+  <Folder Name="/tests/Eclair.Tests/">
+    <Project Path="tests/Eclair.Tests/Eclair.Tests.fsproj" />
+  </Folder>
   <Folder Name="/tests/Infra.Tests/">
     <Project Path="tests/Infra.Tests/ChessPlatform.Infra.Tests.fsproj" />
   </Folder>
