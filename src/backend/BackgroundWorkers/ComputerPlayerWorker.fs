@@ -15,8 +15,6 @@ type ComputerPlayerWorker
 
     let computerUserId = "computer"
 
-    // Guards against overlapping engine runs for the same game: events can arrive
-    // faster than a move computation completes, and handlers run concurrently.
     let inFlightGames =
         System.Collections.Concurrent.ConcurrentDictionary<string, byte> ()
 

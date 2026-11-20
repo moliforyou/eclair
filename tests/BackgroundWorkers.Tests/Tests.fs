@@ -7,13 +7,11 @@ open ChessPlatform.BackgroundWorkers
 open ChessPlatform.BackgroundWorkers.Engine
 open Microsoft.Extensions.Logging.Abstractions
 
-// Helper to unwrap Results in tests
 let unwrap =
     function
     | Ok x -> x
     | Error e -> failwithf "Expected Ok, got Error: %A" e
 
-// Mock implementation of IMessageBus
 type MockMessageBus() =
     let mutable subscribeHandler = None
     let mutable publishedMoves = []
@@ -62,7 +60,6 @@ type MockMessageBus() =
         member _.RemoveFromMatchmakingQueue _ = async { () }
 
 
-// Helper to wait for the worker to subscribe deterministically
 let waitForSubscription (bus: MockMessageBus) =
     async {
         let mutable handler = None
@@ -74,7 +71,6 @@ let waitForSubscription (bus: MockMessageBus) =
         return Option.get handler
     }
 
-// Mock implementation of IGameRepository
 type MockGameRepository(initialGames: Map<string, GameRecord>) =
     let mutable games = initialGames
     let mutable savedRecords = []
@@ -104,7 +100,6 @@ type MockGameRepository(initialGames: Map<string, GameRecord>) =
                 return Ok ()
             }
 
-// Mock implementation of IComputerEngine
 type MockComputerEngine(bestMoveToReturn: MoveRequest option) =
     let mutable calledWithStates = []
 
@@ -121,7 +116,7 @@ type MockComputerEngine(bestMoveToReturn: MoveRequest option) =
 let tests =
     testList "ComputerPlayerWorker Tests" [
         testAsync "Does nothing when it is not the computer's turn" {
-            let state = Game.newGame () // White's turn
+            let state = Game.newGame ()
 
             let record = {
                 GameId = "game1"
@@ -138,25 +133,20 @@ let tests =
             let worker = new ComputerPlayerWorker (logger, repo, bus, engine)
             let cancellationTokenSource = new System.Threading.CancellationTokenSource ()
 
-            // Start subscription
             let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
             let! handler = waitForSubscription bus
 
-            // Trigger event where White just played
             let! _ = handler "game1"
 
-            // Stop
             let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
 
-            // Since WhitePlayerId = "human1" and ActiveColor is White, computer should NOT play
             Expect.isEmpty engine.CalledWithStates "Should not consult the engine on player's turn"
             Expect.isEmpty repo.SavedRecords "Should not write anything to DB"
             Expect.isEmpty bus.PublishedMoves "Should not publish any moves"
         }
 
         testAsync "Plays a move automatically when it is the computer's turn" {
-            let state = Game.newGame () // White's turn
-            // Simulate White playing e2 to e4 to make it Black's (computer's) turn
+            let state = Game.newGame ()
             let whiteMove: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
@@ -167,7 +157,7 @@ let tests =
 
             let record = {
                 GameId = "game1"
-                State = stateAfterWhite // Black's turn (Computer)
+                State = stateAfterWhite
                 WhitePlayerId = "human1"
                 BlackPlayerId = "computer"
             }
@@ -175,7 +165,6 @@ let tests =
             let repo = MockGameRepository (Map [ ("game1", record) ])
             let bus = MockMessageBus ()
 
-            // Computer wants to respond with e7 to e5
             let computerMove: MoveRequest option =
                 Some {
                     From = (4, 6)
@@ -189,17 +178,13 @@ let tests =
             let worker = new ComputerPlayerWorker (logger, repo, bus, engine)
             let cancellationTokenSource = new System.Threading.CancellationTokenSource ()
 
-            // Start subscription
             let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
             let! handler = waitForSubscription bus
 
-            // Trigger event
             let! _ = handler "game1"
 
-            // Stop
             let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
 
-            // Verify the engine was consulted with correct state
             Expect.equal engine.CalledWithStates.Length 1 "Engine should be consulted exactly once"
 
             Expect.equal
@@ -207,12 +192,10 @@ let tests =
                 stateAfterWhite
                 "Consulted state should match state after White move"
 
-            // Verify DB got the computer's move
             Expect.equal repo.SavedRecords.Length 1 "Should save computer's move to DB"
             let savedState = repo.SavedRecords.[0].State
             Expect.equal savedState.ActiveColor White "It should be White's turn again"
 
-            // Verify move published
             Expect.equal bus.PublishedMoves.Length 1 "Should publish the computer's move"
             let publishedGameId, publishedMove = bus.PublishedMoves.[0]
             Expect.equal publishedGameId "game1" "GameId should match"
@@ -242,7 +225,7 @@ let tests =
 
             let repo = MockGameRepository (Map [ ("game1", record) ])
             let bus = MockMessageBus ()
-            let engine = MockComputerEngine (None) // No move returned by engine (checkmate/stalemate/error)
+            let engine = MockComputerEngine (None)
             let logger = NullLogger<ComputerPlayerWorker>.Instance
 
             let worker = new ComputerPlayerWorker (logger, repo, bus, engine)
@@ -268,10 +251,8 @@ let tests =
             let worker = new MatchmakingWorker (logger, repo, bus)
             let cancellationTokenSource = new System.Threading.CancellationTokenSource ()
 
-            // Start worker. Since it runs in a loop, it will immediately poll once.
             let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
 
-            // Give it a moment to run the loop iteration
             let mutable matchFound = None
             let mutable retries = 0
 
@@ -280,10 +261,8 @@ let tests =
                 matchFound <- bus.PublishedMatch
                 retries <- retries + 1
 
-            // Stop
             let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
 
-            // Verify
             Expect.isTrue matchFound.IsSome "Match found should be published"
             let gameId, white, black = matchFound.Value
             Expect.isTrue (gameId.StartsWith ("game_")) "gameId should start with game_"
@@ -291,7 +270,6 @@ let tests =
             Expect.isTrue (black = "playerA" || black = "playerB") "Black player should be one of the matched players"
             Expect.notEqual white black "White and Black should not be the same player"
 
-            // Verify game was created in repository
             let createdGame = Map.tryFind gameId repo.Games
             Expect.isTrue createdGame.IsSome "Created game should be in the repository"
             let record = createdGame.Value
@@ -311,7 +289,6 @@ let tests =
 
             let! _ = Async.AwaitTask (worker.StartAsync (cancellationTokenSource.Token))
 
-            // Give it a moment to process the duplicate pair
             let mutable retries = 0
 
             while List.isEmpty bus.EnqueuedEntries && retries < 50 do

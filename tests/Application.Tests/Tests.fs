@@ -4,7 +4,6 @@ open Expecto
 open ChessPlatform.Domain
 open ChessPlatform.Application
 
-// Mocks
 type MockRepo(initialState: GameRecord option, saveResult: Result<unit, SaveGameError>) =
     interface IGameRepository with
         member _.LoadGame _ = async { return initialState }
@@ -99,7 +98,6 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let bus = MockBus ()
 
-            // Invalid move (pawn jumping over piece etc, or just impossible move)
             let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 5)

@@ -15,11 +15,8 @@ module Program =
     let main args =
         let builder = WebApplication.CreateBuilder (args)
 
-        // Add SignalR
         builder.Services.AddSignalR () |> ignore
 
-        // Wire up Dependencies
-        // Tests will override these in WebApplicationFactory
         let pgConn =
             builder.Configuration.["ConnectionStrings:Postgres"]
             |> Option.ofObj
@@ -43,7 +40,6 @@ module Program =
 
         app.UseRouting () |> ignore
 
-        // Extract from DI for compiler-enforced partial application
         let repo = app.Services.GetRequiredService<IGameRepository> ()
         let bus = app.Services.GetRequiredService<IMessageBus> ()
 
@@ -58,7 +54,6 @@ module Program =
 
         app.UseFalco (falcoEndpoints) |> ignore
 
-        // Use UseEndpoints for SignalR
         app.UseEndpoints (fun endpoints -> endpoints.MapHub<GameHub> ("/hubs/game") |> ignore)
         |> ignore
 

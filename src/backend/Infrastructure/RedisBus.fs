@@ -5,7 +5,6 @@ open ChessPlatform.Application
 open StackExchange.Redis
 open System.Text.Json
 
-/// A simple DTO for moves to be published
 type MoveDto = {
     From: Position
     To: Position
@@ -61,7 +60,6 @@ type RedisBus(connectionString: string) =
 
                 queue.OnMessage (fun msg ->
                     let ch = msg.Channel.ToString ()
-                    // Extract gameId from "game:{gameId}:events"
                     let parts = ch.Split (':')
 
                     if parts.Length = 3 && parts.[0] = "game" && parts.[2] = "events" then

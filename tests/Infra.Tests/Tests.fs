@@ -20,7 +20,6 @@ let expectError =
     | Ok _ -> failwith "Expected Error, got Ok"
     | Error e -> e
 
-// Global fixtures
 let pgContainer =
     lazy
         (let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
@@ -49,11 +48,9 @@ let tests =
                 BlackPlayerId = "b1"
             }
 
-            // 1. Create Game
             let! res1 = repo.CreateGame (record)
             Expect.isTrue (Result.isOk res1) "create should succeed"
 
-            // 1b. Load Game (tests the postgres column parsing/casing)
             let! loadedOpt = repo.LoadGame (gameId)
             Expect.isTrue (Option.isSome loadedOpt) "load game should return Some record"
             let loaded = Option.get loadedOpt
@@ -61,7 +58,6 @@ let tests =
             Expect.equal loaded.BlackPlayerId "b1" "BlackPlayerId should match"
             Expect.equal loaded.State.Version 0 "Version should match"
 
-            // 2. Play a move
             let req: MoveRequest = {
                 From = (4, 1)
                 To = (4, 3)
@@ -71,11 +67,9 @@ let tests =
             let newState = Game.playMove initialState req |> unwrap
             let newRecord = { record with State = newState }
 
-            // 3. Save game with correct version (0)
             let! res2 = repo.SaveGame (newRecord, 0)
             Expect.isTrue (Result.isOk res2) "save with correct version should succeed"
 
-            // 4. Try saving again with the old version (0) -> should fail
             let! res3 = repo.SaveGame (newRecord, 0)
 
             Expect.equal
@@ -83,7 +77,6 @@ let tests =
                 SaveGameError.ConcurrencyConflict
                 "save with old version should fail with ConcurrencyConflict"
 
-            // 5. Save with new version (1) -> should succeed
             let! res4 = repo.SaveGame (newRecord, 1)
             Expect.isTrue (Result.isOk res4) "save with correct updated version should succeed"
         }
@@ -100,7 +93,6 @@ let tests =
             let pgConnectionString = pgContainer.Value.GetConnectionString ()
             let repo = PostgresRepo (pgConnectionString) :> IGameRepository
 
-            // Insert a corrupt row directly, bypassing the repository
             pgConnectionString
             |> Npgsql.FSharp.Sql.connect
             |> Npgsql.FSharp.Sql.query
@@ -134,16 +126,13 @@ let tests =
             let redisConnectionString = redisContainer.Value.GetConnectionString ()
             let bus = RedisBus (redisConnectionString) :> IMessageBus
 
-            // Empty queue yields nothing
             let! empty = bus.DequeueMatchmakingPair ()
             Expect.equal empty [] "empty queue should dequeue an empty list"
 
-            // A single queued player is still popped (callers must re-enqueue)
             do! bus.EnqueueMatchmaking ("solo", 1000)
             let! single = bus.DequeueMatchmakingPair ()
             Expect.equal single [ ("solo", 1000) ] "a lone player should be popped as a single-entry list"
 
-            // Two players come back lowest-elo first
             do! bus.EnqueueMatchmaking ("bob", 1400)
             do! bus.EnqueueMatchmaking ("alice", 1200)
             let! pair = bus.DequeueMatchmakingPair ()
@@ -160,11 +149,9 @@ let tests =
             let mutable messageReceived = false
             sub.Subscribe (channel, fun _ _ -> messageReceived <- true) |> ignore
 
-            // Publish
             let move = Normal ((4, 1), (4, 3))
             do! bus.PublishMovePlayed ("test-game-2", move)
 
-            // Wait a bit for message to propagate
             do! Async.Sleep 500
 
             Expect.isTrue messageReceived "message should be received"

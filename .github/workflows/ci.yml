@@ -47,6 +47,5 @@ jobs:
       - name: Test
         run: bun test
 
-      # bun run build = eslint + tsc -b + vite build
       - name: Lint, typecheck, build
         run: bun run build

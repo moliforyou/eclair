@@ -1,13 +1,7 @@
 namespace ChessPlatform.Domain
 
-// ─────────────────────────────────────────────────────────
-//  FenParser.fs — Pure FEN ↔ GameState conversion.
-//  No side effects, no external dependencies.
-// ─────────────────────────────────────────────────────────
-
 module FenParser =
 
-    /// Map a FEN piece character to a Piece value.
     let private charToPiece (c: char) : Piece option =
         match c with
         | 'K' -> Some { Color = White; Type = King }
@@ -24,7 +18,6 @@ module FenParser =
         | 'p' -> Some { Color = Black; Type = Pawn }
         | _ -> None
 
-    /// Map a Piece to its FEN character.
     let private pieceToChar (piece: Piece) : char =
         let c =
             match piece.Type with
@@ -39,8 +32,6 @@ module FenParser =
         | White -> c
         | Black -> System.Char.ToLower c
 
-    /// Parse the piece-placement field (rank descriptions separated by '/').
-    /// FEN ranks go from rank 8 (index 7) down to rank 1 (index 0).
     let private parsePiecePlacement (placement: string) : Result<Board, string> =
         let ranks = placement.Split ('/')
 
@@ -53,9 +44,8 @@ module FenParser =
                 else
                     match charToPiece c with
                     | Some piece -> (Map.add (file, 0) piece board, file + 1)
-                    | None -> (board, file) // skip unknown chars — caught later
+                    | None -> (board, file)
 
-            // Process ranks top-to-bottom: FEN rank 0 = board rank 7
             let mutable board = Map.empty
             let mutable error = None
 
@@ -81,14 +71,12 @@ module FenParser =
             | Some msg -> Error msg
             | None -> Ok board
 
-    /// Parse the active color field.
     let private parseActiveColor (s: string) : Result<Color, string> =
         match s with
         | "w" -> Ok White
         | "b" -> Ok Black
         | _ -> Error $"Invalid active color: '{s}'"
 
-    /// Parse the castling availability field.
     let private parseCastlingRights (s: string) : Result<CastlingRights, string> =
         if s = "-" then
             Ok {
@@ -110,7 +98,6 @@ module FenParser =
                     BlackQueenSide = s.Contains ('q')
                 }
 
-    /// Parse the en passant target square field.
     let private parseEnPassant (s: string) : Result<Position option, string> =
         if s = "-" then
             Ok None
@@ -125,23 +112,17 @@ module FenParser =
         else
             Error $"Invalid en passant target: '{s}'"
 
-    /// Parse a non-negative integer field.
     let private parseInt (label: string) (s: string) : Result<int, string> =
         match System.Int32.TryParse s with
         | true, n when n >= 0 -> Ok n
         | _ -> Error $"Invalid {label}: '{s}'"
 
-    // ───────── Public API ─────────
-
-    /// Parse a standard FEN string into a GameState.
-    /// Returns Error for malformed input.
     let parse (fen: string) : Result<GameState, string> =
         let fields = fen.Trim().Split (' ')
 
         if fields.Length <> 6 then
             Error $"FEN must have 6 space-separated fields, got {fields.Length}"
         else
-            // Use Result computation via nested binds
             parsePiecePlacement fields.[0]
             |> Result.bind (fun board ->
                 parseActiveColor fields.[1]
@@ -170,10 +151,8 @@ module FenParser =
                 )
             )
 
-    /// Convert a Position to algebraic notation (e.g., (0,0) -> "a1").
     let positionToAlgebraic ((file, rank): Position) : string = $"{char (int 'a' + file)}{rank + 1}"
 
-    /// Convert algebraic notation to a Position (e.g., "a1" -> (0,0)).
     let algebraicToPosition (s: string) : Position option =
         if s.Length = 2 then
             let file = int s.[0] - int 'a'
@@ -186,9 +165,7 @@ module FenParser =
         else
             None
 
-    /// Serialize a GameState back to a FEN string.
     let toFen (state: GameState) : string =
-        // 1. Piece placement
         let placement =
             [
                 for rank in 7..-1..0 do
@@ -212,13 +189,11 @@ module FenParser =
             ]
             |> String.concat "/"
 
-        // 2. Active color
         let activeColor =
             match state.ActiveColor with
             | White -> "w"
             | Black -> "b"
 
-        // 3. Castling rights
         let castling =
             let s =
                 (if state.CastlingRights.WhiteKingSide then "K" else "")
@@ -228,14 +203,11 @@ module FenParser =
 
             if s = "" then "-" else s
 
-        // 4. En passant target
         let epTarget =
             match state.EnPassantTarget with
             | Some pos -> positionToAlgebraic pos
             | None -> "-"
 
-        // 5-6. Clocks
         $"{placement} {activeColor} {castling} {epTarget} {state.HalfMoveClock} {state.FullMoveNumber}"
 
-    /// The standard starting position FEN.
     let startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

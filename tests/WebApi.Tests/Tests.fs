@@ -52,7 +52,6 @@ type GameDetailsDto = {
     BlackPlayerId: string
 }
 
-/// Repo simulating an already-existing game: CreateGame conflicts, forcing the reset path.
 type ConflictingCreateRepo(existing: GameRecord) =
     let mutable saved = None
     member _.Saved = saved
@@ -186,7 +185,6 @@ let tests =
             let client = factory.CreateClient ()
             client.DefaultRequestHeaders.Add ("X-User-Id", "w1")
 
-            // Invalid move: e2 to e5 (illegal for pawn)
             let json =
                 """{"FromRow": 1, "FromCol": 4, "ToRow": 4, "ToCol": 4, "Promotion": ""}"""
 
@@ -242,7 +240,6 @@ let tests =
             let factory = new AppFactory (repo)
             let client = factory.CreateClient ()
 
-            // 1. White player w1 plays e2-e4
             let move1Json =
                 """{"FromRow": 1, "FromCol": 4, "ToRow": 3, "ToCol": 4, "Promotion": ""}"""
 
@@ -258,7 +255,6 @@ let tests =
             let! body1 = response1.Content.ReadAsStringAsync ()
             Expect.equal response1.StatusCode HttpStatusCode.OK (sprintf "White move e4 should succeed. Body: %s" body1)
 
-            // 2. Black player b1 plays e7-e5
             let move2Json =
                 """{"FromRow": 6, "FromCol": 4, "ToRow": 4, "ToCol": 4, "Promotion": ""}"""
 
@@ -274,7 +270,6 @@ let tests =
             let! body2 = response2.Content.ReadAsStringAsync ()
             Expect.equal response2.StatusCode HttpStatusCode.OK (sprintf "Black move e5 should succeed. Body: %s" body2)
 
-            // 3. Verify final state via GET /api/games/{id}
             let! (response3: System.Net.Http.HttpResponseMessage) = client.GetAsync ("/api/games/game_int_1")
             Expect.equal response3.StatusCode HttpStatusCode.OK "Get game should return 200"
             let! (gameDetails: GameDetailsDto) = response3.Content.ReadFromJsonAsync<GameDetailsDto> ()
@@ -350,7 +345,6 @@ let tests =
             let repo = MockRepo (Some record, Ok ())
             let factory = new AppFactory (repo)
             let client = factory.CreateClient ()
-            // No X-User-Id header: the caller resolves to "anonymous", which is never the active player
 
             let json =
                 """{"FromRow": 1, "FromCol": 4, "ToRow": 3, "ToCol": 4, "Promotion": ""}"""
@@ -515,7 +509,6 @@ let tests =
         }
     ]
 
-/// Bus mock that captures subscription handlers so tests can invoke them deterministically.
 type SubscribingBus() =
     let mutable moveHandler: (string -> Async<unit>) option = None
     let mutable matchHandler: (string * string * string -> Async<unit>) option = None
@@ -554,7 +547,6 @@ type SubscribingBus() =
         member _.RemoveFromMatchmakingQueue _ = async { () }
 
 
-/// Hub context mock recording (target, method) pairs for every SignalR send.
 type RecordingHubContext() =
     let mutable sent: (string * string) list = []
 

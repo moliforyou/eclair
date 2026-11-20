@@ -3,8 +3,6 @@ open Expecto.Flip
 open FsCheck
 open ChessPlatform.Domain
 
-// ───────── Helpers ─────────
-
 let play (state: GameState) (fromFile, fromRank) (toFile, toRank) =
     Game.playMove state {
         From = (fromFile, fromRank)
@@ -29,8 +27,6 @@ let expectError result =
     | Ok _ -> failwith "Expected Error but got Ok"
     | Error e -> e
 
-// ───────── FEN Tests ─────────
-
 let fenTests =
     testList "FenParser" [
         test "parse starting position" {
@@ -47,11 +43,8 @@ let fenTests =
 
         test "parse specific pieces" {
             let state = FenParser.parse FenParser.startingFen |> unwrap
-            // White king at e1 = (4, 0)
             Expect.equal "" (Map.find (4, 0) state.Board) { Color = White; Type = King }
-            // Black queen at d8 = (3, 7)
             Expect.equal "" (Map.find (3, 7) state.Board) { Color = Black; Type = Queen }
-            // White pawn at a2 = (0, 1)
             Expect.equal "" (Map.find (0, 1) state.Board) { Color = White; Type = Pawn }
         }
 
@@ -88,8 +81,6 @@ let fenTests =
         }
     ]
 
-// ───────── Pawn Tests ─────────
-
 let pawnTests =
     testList "Pawn" [
         test "single push" {
@@ -107,45 +98,41 @@ let pawnTests =
         }
 
         test "capture" {
-            // Set up: after 1.e4 d5
             let state =
                 Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap // e4
+                |> unwrap
                 |> play
                 <| (3, 6)
                 <| (3, 4)
-                |> unwrap // d5
+                |> unwrap
 
-            let result = play state (4, 3) (3, 4) |> unwrap // exd5
+            let result = play state (4, 3) (3, 4) |> unwrap
             Expect.equal "" (Map.find (3, 4) result.Board) { Color = White; Type = Pawn }
         }
 
         test "en passant" {
-            // 1.e4 a6 2.e5 d5 3.exd6 (en passant)
             let state =
                 Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap // e4
+                |> unwrap
                 |> play
                 <| (0, 6)
                 <| (0, 5)
-                |> unwrap // a6
+                |> unwrap
                 |> play
                 <| (4, 3)
                 <| (4, 4)
-                |> unwrap // e5
+                |> unwrap
                 |> play
                 <| (3, 6)
                 <| (3, 4)
-                |> unwrap // d5
+                |> unwrap
 
-            let result = play state (4, 4) (3, 5) |> unwrap // exd6 e.p.
+            let result = play state (4, 4) (3, 5) |> unwrap
             Expect.equal "" (Map.find (3, 5) result.Board) { Color = White; Type = Pawn }
-            // The captured pawn at d5 should be gone
             Expect.isTrue "" (Game.isSquareEmpty result.Board (3, 4))
         }
 
         test "promotion" {
-            // Set up a pawn on 7th rank ready to promote
             let fen = "8/P7/8/8/8/8/8/4K2k w - - 0 1"
             let state = FenParser.parse fen |> unwrap
             let result = playPromo state (0, 6) (0, 7) Queen |> unwrap
@@ -160,25 +147,21 @@ let pawnTests =
         }
     ]
 
-// ───────── Knight Tests ─────────
-
 let knightTests =
     testList "Knight" [
         test "L-shape move" {
             let state = Game.newGame ()
-            let result = play state (1, 0) (2, 2) |> unwrap // Nc3
+            let result = play state (1, 0) (2, 2) |> unwrap
             Expect.equal "" (Map.find (2, 2) result.Board) { Color = White; Type = Knight }
         }
 
         test "knight capture" {
             let fen = "8/8/3p4/8/4N3/8/8/4K2k w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            let result = play state (4, 3) (3, 5) |> unwrap // Nxd6
+            let result = play state (4, 3) (3, 5) |> unwrap
             Expect.equal "" (Map.find (3, 5) result.Board) { Color = White; Type = Knight }
         }
     ]
-
-// ───────── Bishop Tests ─────────
 
 let bishopTests =
     testList "Bishop" [
@@ -192,13 +175,10 @@ let bishopTests =
         test "blocked by own piece" {
             let fen = "8/8/8/4P3/3B4/8/8/4K2k w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            // Bishop at d4, own pawn at e5 blocks f6
             let result = play state (3, 3) (5, 5)
             Expect.isTrue "" (Result.isError result)
         }
     ]
-
-// ───────── Rook Tests ─────────
 
 let rookTests =
     testList "Rook" [
@@ -210,23 +190,17 @@ let rookTests =
         }
     ]
 
-// ───────── Queen Tests ─────────
-
 let queenTests =
     testList "Queen" [
         test "diagonal and straight" {
             let fen = "8/8/8/8/3Q4/8/8/4K2k w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            // Diagonal
             let r1 = play state (3, 3) (6, 6) |> unwrap
             Expect.equal "" (Map.find (6, 6) r1.Board) { Color = White; Type = Queen }
-            // Straight
             let r2 = play state (3, 3) (3, 7) |> unwrap
             Expect.equal "" (Map.find (3, 7) r2.Board) { Color = White; Type = Queen }
         }
     ]
-
-// ───────── King & Castling Tests ─────────
 
 let kingTests =
     testList "King & Castling" [
@@ -240,7 +214,7 @@ let kingTests =
         test "kingside castling" {
             let fen = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"
             let state = FenParser.parse fen |> unwrap
-            let result = play state (4, 0) (6, 0) |> unwrap // O-O
+            let result = play state (4, 0) (6, 0) |> unwrap
             Expect.equal "" (Map.find (6, 0) result.Board) { Color = White; Type = King }
             Expect.equal "" (Map.find (5, 0) result.Board) { Color = White; Type = Rook }
         }
@@ -248,7 +222,7 @@ let kingTests =
         test "queenside castling" {
             let fen = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"
             let state = FenParser.parse fen |> unwrap
-            let result = play state (4, 0) (2, 0) |> unwrap // O-O-O
+            let result = play state (4, 0) (2, 0) |> unwrap
             Expect.equal "" (Map.find (2, 0) result.Board) { Color = White; Type = King }
             Expect.equal "" (Map.find (3, 0) result.Board) { Color = White; Type = Rook }
         }
@@ -259,32 +233,24 @@ let kingTests =
 
             let result =
                 play state (4, 0) (5, 0)
-                |> unwrap // Kf1
+                |> unwrap
                 |> play
                 <| (0, 6)
                 <| (0, 5)
-                |> unwrap // a6
+                |> unwrap
 
             Expect.isFalse "" result.CastlingRights.WhiteKingSide
             Expect.isFalse "" result.CastlingRights.WhiteQueenSide
         }
 
         test "cannot castle through check" {
-            // White bishop on b4 attacks d2..e1 path — but let's use a clearer setup
             let fen = "r3k2r/pppppppp/8/8/1b6/8/PPPPPPPP/R3K2R w KQkq - 0 1"
-            // Black bishop on b4 doesn't attack castling path for white king-side
-            // Let's test queen-side where bishop attacks d1
             let fen2 = "r3k2r/pppppppp/8/8/8/5b2/PPPPPPPP/R3K2R w KQkq - 0 1"
             let state = FenParser.parse fen2 |> unwrap
-            // The bishop on f3 attacks d1 (queen-side path)
-            // Actually f3 bishop attacks through e2 pawn... let me use an open position
             let fen3 = "4k3/8/8/8/8/3b4/8/R3K2R w KQ - 0 1"
             let state = FenParser.parse fen3 |> unwrap
-            // Bishop on d3 attacks... let's just check if castling is blocked by check
-            // King in check can't castle
             let fen4 = "4k3/8/8/8/4r3/8/8/R3K2R w KQ - 0 1"
             let state = FenParser.parse fen4 |> unwrap
-            // Black rook on e4 gives check to white king on e1
             let resultKS = play state (4, 0) (6, 0)
             let resultQS = play state (4, 0) (2, 0)
             Expect.isTrue "" (Result.isError resultKS)
@@ -292,39 +258,36 @@ let kingTests =
         }
     ]
 
-// ───────── Check / Checkmate / Stalemate ─────────
-
 let statusTests =
     testList "Game Status" [
         test "Scholar's Mate" {
-            // 1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6 4.Qxf7#
             let state =
                 Game.newGame () |> play <| (4, 1) <| (4, 3)
-                |> unwrap // e4
+                |> unwrap
                 |> play
                 <| (4, 6)
                 <| (4, 4)
-                |> unwrap // e5
+                |> unwrap
                 |> play
                 <| (5, 0)
                 <| (2, 3)
-                |> unwrap // Bc4
+                |> unwrap
                 |> play
                 <| (1, 7)
                 <| (2, 5)
-                |> unwrap // Nc6
+                |> unwrap
                 |> play
                 <| (3, 0)
                 <| (7, 4)
-                |> unwrap // Qh5
+                |> unwrap
                 |> play
                 <| (6, 7)
                 <| (5, 5)
-                |> unwrap // Nf6
+                |> unwrap
                 |> play
                 <| (7, 4)
                 <| (5, 6)
-                |> unwrap // Qxf7#
+                |> unwrap
 
             Expect.equal "" state.Status (Checkmate White)
         }
@@ -332,7 +295,6 @@ let statusTests =
         test "check detection" {
             let fen = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            // Rh8+ gives check
             let result = play state (7, 0) (7, 7) |> unwrap
 
             match result.Status with
@@ -341,20 +303,13 @@ let statusTests =
         }
 
         test "stalemate" {
-            // Stalemate: Black king trapped, not in check, no legal moves
-            // Ka8 with White Qb6 + Kc8 — king has nowhere to go, not in check
             let fen = "k7/8/1Q6/8/8/8/8/2K5 b - - 0 1"
             let state = FenParser.parse fen |> unwrap
             let legalMoves = Game.allLegalMoves state
-            // Verify no legal moves and not in check = stalemate via detectGameStatus
             Expect.isTrue "" (List.isEmpty legalMoves)
             Expect.isFalse "" (Game.isKingInCheck state.Board Black)
-            // Now test stalemate via a move that causes it
-            // White queen on a1, king on c1, Black king on a8 — Qa7 is stalemate (almost)
-            // Simpler: set up so White plays Qb6 delivering stalemate
             let fen2 = "k7/8/8/8/8/8/1Q6/2K5 w - - 0 1"
             let state2 = FenParser.parse fen2 |> unwrap
-            // Qb2 to b6: queen moves from (1,1) to (1,5)
             let result = play state2 (1, 1) (1, 5) |> unwrap
             Expect.equal "" result.Status Stalemate
         }
@@ -368,13 +323,10 @@ let statusTests =
         }
     ]
 
-// ───────── Error Case Tests ─────────
-
 let errorTests =
     testList "Error Cases" [
         test "wrong color" {
             let state = Game.newGame ()
-            // Try to move a black pawn on white's turn
             let result = play state (4, 6) (4, 5)
             Expect.equal "" (expectError result) WrongColor
         }
@@ -388,7 +340,6 @@ let errorTests =
         test "game already over" {
             let fen = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
             let mateState = FenParser.parse "k7/2Q5/1K6/8/8/8/8/8 b - - 0 1" |> unwrap
-            // Manually set checkmate status for testing
             let mateState = {
                 mateState with
                     Status = Checkmate White
@@ -399,28 +350,20 @@ let errorTests =
         }
 
         test "move leaves king in check" {
-            // King on e1, rook pinning piece on e-file
             let fen = "4k3/8/8/8/4r3/8/4P3/4K3 w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            // Moving pawn sideways would be illegal anyway, but moving it forward
-            // should be legal as it blocks. Let's test a real pin:
             let fen2 = "4k3/8/8/8/4r3/8/4N3/4K3 w - - 0 1"
             let state2 = FenParser.parse fen2 |> unwrap
-            // Knight on e2 is pinned by rook on e4 to king on e1
-            // Moving knight should fail
-            let result = play state2 (4, 1) (3, 3) // Nd3 - leaves king exposed
+            let result = play state2 (4, 1) (3, 3)
             Expect.isTrue "" (Result.isError result)
         }
     ]
-
-// ───────── FsCheck Property Tests ─────────
 
 let propertyTests =
     testList "Properties" [
         test "piece count never exceeds 32" {
             let state = Game.newGame ()
             Expect.isTrue "" (Map.count state.Board <= 32)
-            // After some moves
             let state2 =
                 state |> play <| (4, 1) <| (4, 3) |> unwrap |> play <| (4, 6) <| (4, 4)
                 |> unwrap
@@ -444,7 +387,6 @@ let propertyTests =
             Expect.equal "" whiteKings 1
             Expect.equal "" blackKings 1
 
-            // After Scholar's mate
             let mated =
                 Game.newGame () |> play <| (4, 1) <| (4, 3) |> unwrap |> play
                 <| (4, 6)
@@ -503,8 +445,6 @@ let propertyTests =
             Expect.equal "" parsed.CastlingRights state.CastlingRights
         }
     ]
-
-// ───────── Entry Point ─────────
 
 [<Tests>]
 let allTests =

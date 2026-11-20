@@ -38,9 +38,6 @@ module HistoryJson =
         |> List.toArray
         |> JsonSerializer.Serialize
 
-    /// Rebuilds a display-sufficient history (newest first). Captures, castling
-    /// and en passant round-trip as Normal moves carrying the same from/to,
-    /// which is all the MoveSummaryDto projection uses.
     let toHistory (json: string) : Move list =
         try
             match JsonSerializer.Deserialize<StoredMove array> (json) with
@@ -64,7 +61,6 @@ module HistoryJson =
 
 type PostgresRepo(connectionString: string) =
 
-    // Simple schema initialization
     do
         try
             connectionString
@@ -191,7 +187,7 @@ type PostgresRepo(connectionString: string) =
                     else
                         return Error SaveGameError.ConcurrencyConflict
                 with
-                | :? PostgresException as ex when ex.SqlState = "23505" -> // unique_violation
+                | :? PostgresException as ex when ex.SqlState = "23505" ->
                     return Error SaveGameError.ConcurrencyConflict
                 | ex -> return Error (SaveGameError.PersistenceFailure ex.Message)
             }
