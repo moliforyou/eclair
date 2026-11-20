@@ -14,21 +14,21 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Restore tools
         run: dotnet tool restore
 
       - name: Check formatting
-        run: dotnet fantomas src tests && git diff --exit-code -- src tests
+        run: ./eclair format && git diff --exit-code -- src tests tools
 
       - name: Check layer rules
-        run: scripts/check-layers.sh
+        run: ./eclair layers
 
       - name: Build
-        run: dotnet build ChessPlatform.slnx
+        run: ./eclair build
 
       # Infra.Tests uses Testcontainers; Docker is preinstalled on ubuntu runners
       - name: Test
-        run: dotnet test ChessPlatform.slnx --no-build
+        run: ./eclair test
 

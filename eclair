@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+builds="$root/tools/eclair/bin/wrapper"
+current="$builds/current"
+
+stale() {
+  [ ! -f "$current" ] ||
+    [ -n "$(find "$root/tools/eclair" "$root/Directory.Build.props" \( -name bin -o -name obj \) -prune \
+      -o \( -name '*.fs' -o -name '*.fsproj' -o -name Directory.Build.props \) -newer "$current" -print -quit)" ]
+}
+
+# Each build gets its own directory, so a racing build never overwrites a DLL that a
+# running eclair has mapped. The stamp takes the build's start time, so an edit made
+# during the build is still newer than the stamp.
+if stale; then
+  command -v dotnet >/dev/null || {
+    echo "eclair: needs the .NET 10 SDK. Install it and put dotnet on PATH." >&2
+    exit 127
+  }
+  out="$builds/$$"
+  mkdir -p "$out"
+  touch "$out/started"
+  echo "eclair: building tools/eclair, because its sources changed..." >&2
+  if ! dotnet build "$root/tools/eclair/Eclair.fsproj" -c Release -o "$out/bin" \
+    -p:BaseIntermediateOutputPath="$out/obj/" -nologo -v q >"$out/build.log" 2>&1; then
+    cat "$out/build.log" >&2
+    rm -rf "$out"
+    echo "eclair: tools/eclair does not build. Fix the errors above, then rerun." >&2
+    exit 1
+  fi
+  previous=$(cat "$current" 2>/dev/null || true)
+  echo "$out/bin/Eclair.dll" >"$out/stamp"
+  touch -r "$out/started" "$out/stamp"
+  mv -f "$out/stamp" "$current"
+  for dir in "$builds"/*/; do
+    dir=${dir%/}
+    case "$dir" in "$out" | "${previous%/bin/Eclair.dll}") continue ;; esac
+    kill -0 "${dir##*/}" 2>/dev/null || rm -rf "$dir"
+  done
+fi
+
+read -r dll <"$current"
+exec dotnet "$dll" "$@"

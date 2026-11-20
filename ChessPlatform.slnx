@@ -29,10 +29,17 @@
   <Folder Name="/tests/Domain.Tests/">
     <Project Path="tests/Domain.Tests/ChessPlatform.Domain.Tests.fsproj" />
   </Folder>
+  <Folder Name="/tests/Eclair.Tests/">
+    <Project Path="tests/Eclair.Tests/Eclair.Tests.fsproj" />
+  </Folder>
   <Folder Name="/tests/Infra.Tests/">
     <Project Path="tests/Infra.Tests/ChessPlatform.Infra.Tests.fsproj" />
   </Folder>
   <Folder Name="/tests/WebApi.Tests/">
     <Project Path="tests/WebApi.Tests/ChessPlatform.WebApi.Tests.fsproj" />
+  </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/eclair/">
+    <Project Path="tools/eclair/Eclair.fsproj" />
   </Folder>
 </Solution>
