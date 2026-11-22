@@ -21,7 +21,7 @@ let declared (propsXml: string) =
         | Some package, Some version ->
             Some {
                 Package = package
-                Version = version.Trim('[', ']')
+                Version = version.Trim ('[', ']')
             }
         | _ -> None
     )
@@ -86,7 +86,12 @@ let private location element =
     | [] -> "(no location)"
     | first :: _ ->
         let physical = property "physicalLocation" first
-        let uri = physical |> Option.bind (property "artifactLocation") |> Option.bind (text "uri")
+
+        let uri =
+            physical
+            |> Option.bind (property "artifactLocation")
+            |> Option.bind (text "uri")
+
         let region = physical |> Option.bind (property "region")
         let line = region |> Option.bind (number "startLine")
         let column = region |> Option.bind (number "startColumn")
@@ -100,7 +105,10 @@ let private location element =
 let private finding rule element = {
     Rule = text "ruleId" element |> Option.defaultValue rule
     Level = text "level" element |> Option.defaultValue "error"
-    Message = property "message" element |> Option.bind (text "text") |> Option.defaultValue ""
+    Message =
+        property "message" element
+        |> Option.bind (text "text")
+        |> Option.defaultValue ""
     Location = location element
 }
 
@@ -113,6 +121,7 @@ let findings (sarif: string) =
             for invocation in items "invocations" run do
                 for notification in items "toolExecutionNotifications" invocation do
                     finding "tool" notification
+
             for result in items "results" run do
                 finding "analyzer" result
     ]

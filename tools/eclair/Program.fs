@@ -303,7 +303,9 @@ let private analyze env output =
         let exitCode = runProcess env "dotnet" args output
 
         if not (File.Exists report) then
-            log.WriteLine "analyze: fsharp-analyzers wrote no report, so nothing was checked. Its output above says why."
+            log.WriteLine
+                "analyze: fsharp-analyzers wrote no report, so nothing was checked. Its output above says why."
+
             if exitCode = 0 then 1 else exitCode
         else
             let found = Analyzers.findings (File.ReadAllText report)

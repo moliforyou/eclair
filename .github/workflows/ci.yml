@@ -20,21 +20,17 @@ jobs:
         run: dotnet tool restore
 
       # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
-      # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
-      # DEBUG (temporary)
-      - name: Inspect eclair build
-        run: |
-          dotnet build tools/eclair/Eclair.fsproj -o /tmp/eclair-out -v n 2>&1 | grep -iE "fsharp.core|warn|error|CentralPackage|lock" | head -60 || true
-          ls /tmp/eclair-out | head -40
-          echo "=== lock"; cat tools/eclair/packages.lock.json || true
-          echo "=== assets FSharp.Core"; grep -n -A12 '"FSharp.Core/' tools/eclair/obj/project.assets.json | head -60 || true
-
       - name: Check formatting
         continue-on-error: true
         run: ./eclair format && git diff --exit-code -- src tests tools
 
       - name: Check layer rules
         run: ./eclair layers
+
+      # BOOTSTRAP (temporary): list every warning in every project in one run.
+      - name: List all warnings
+        continue-on-error: true
+        run: dotnet build ChessPlatform.slnx -p:TreatWarningsAsErrors=false 2>&1 | grep -E "warning (FS|NU)[0-9]+" | sed -E 's# \[[^]]*\]$##' | sort -u
 
       - name: Build
         id: build

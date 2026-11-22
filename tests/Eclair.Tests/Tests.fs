@@ -130,7 +130,8 @@ let tests =
         }
     ]
 
-let sarif = """{
+let sarif =
+    """{
   "runs": [
     {
       "invocations": [
@@ -187,7 +188,8 @@ let analyzerTests =
 
         test "a clean report has no findings" {
             let found =
-                Analyzers.findings """{ "runs": [ { "invocations": [ { "executionSuccessful": true } ], "results": [] } ] }"""
+                Analyzers.findings
+                    """{ "runs": [ { "invocations": [ { "executionSuccessful": true } ], "results": [] } ] }"""
 
             Expect.isEmpty found "no findings"
         }
