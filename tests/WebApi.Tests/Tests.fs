@@ -270,7 +270,9 @@ let tests =
             let! (response3: System.Net.Http.HttpResponseMessage) = client.GetAsync ("/api/games/game_int_1")
             Expect.equal response3.StatusCode HttpStatusCode.OK "Get game should return 200"
             let! body = response3.Content.ReadFromJsonAsync<GameDetailsDto> ()
-            let gameDetails = Expect.wantSome (Option.ofObj body) "Get game should return a body"
+
+            let gameDetails =
+                Expect.wantSome (Option.ofObj body) "Get game should return a body"
 
             Expect.equal gameDetails.Turn "w" "Turn should be White's after 1. e4 e5"
 
@@ -607,7 +609,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MoveHandler)
 
-            let handler = Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+            let handler =
+                Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+
             do! Async.StartAsTask (handler "g1")
 
             Expect.equal hub.Sent [ ("group:g1", "MovePlayed") ] "Should broadcast MovePlayed to the game group"
@@ -626,7 +630,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MoveHandler)
 
-            let handler = Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+            let handler =
+                Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+
             do! Async.StartAsTask (handler "ghost-game")
 
             Expect.equal hub.Sent [] "Should not broadcast anything for an unknown game"
@@ -644,7 +650,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MatchHandler)
 
-            let handler = Expect.wantSome bus.MatchHandler "The broadcaster should subscribe to matches"
+            let handler =
+                Expect.wantSome bus.MatchHandler "The broadcaster should subscribe to matches"
+
             do! Async.StartAsTask (handler ("g1", "w1", "b1"))
 
             Expect.equal

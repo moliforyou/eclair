@@ -19,18 +19,11 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
-      # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
       - name: Check formatting
-        continue-on-error: true
         run: ./eclair format && git diff --exit-code -- src tests tools
 
       - name: Check layer rules
         run: ./eclair layers
-
-      # BOOTSTRAP (temporary): list every warning in every project in one run.
-      - name: List all warnings
-        continue-on-error: true
-        run: dotnet build ChessPlatform.slnx -p:TreatWarningsAsErrors=false 2>&1 | grep -E "warning (FS|NU)[0-9]+" | sed -E 's# \[[^]]*\]$##' | sort -u
 
       - name: Build
         id: build
@@ -44,10 +37,3 @@ jobs:
       - name: Test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./eclair test
-
-      # BOOTSTRAP (temporary): print the generated lock files and Fantomas output into the log.
-      - name: Print bootstrap files
-        if: ${{ always() }}
-        run: |
-          echo "=== PATCH"; git diff -- src tests tools; echo "=== END PATCH"
-          for f in $(git ls-files --others --exclude-standard | grep packages.lock.json); do echo "=== FILE $f"; cat "$f"; echo "=== END FILE"; done
