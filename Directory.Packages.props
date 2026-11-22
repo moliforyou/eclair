@@ -4,6 +4,8 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The FSharp.Core that ships with the SDK in global.json. -->
+    <PackageVersion Include="FSharp.Core" Version="10.1.300" />
     <PackageVersion Include="Falco" Version="5.2.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
     <PackageVersion Include="Npgsql.FSharp" Version="8.0.0" />

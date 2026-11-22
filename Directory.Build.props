@@ -15,5 +15,11 @@
     -->
     <WarnOn>$(WarnOn);1178;1182;3388;3389;3395;3559;3560</WarnOn>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Central package management drops the SDK's implicit FSharp.Core, so reference it here,
+         pinned in Directory.Packages.props. -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
 </Project>

@@ -20,6 +20,7 @@ jobs:
         run: dotnet tool restore
 
       # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
+      # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
       # DEBUG (temporary)
       - name: Inspect eclair build
         run: |
