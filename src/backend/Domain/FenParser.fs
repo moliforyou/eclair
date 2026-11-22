@@ -54,7 +54,8 @@ module FenParser =
             |> List.fold
                 (fun board (rankIdx, rankStr) ->
                     board
-                    |> Result.bind (parseRank (7 - rankIdx) 0 (List.ofArray (rankStr.ToCharArray ()))))
+                    |> Result.bind (parseRank (7 - rankIdx) 0 (List.ofArray (rankStr.ToCharArray ())))
+                )
                 (Ok Map.empty)
 
     let private parseActiveColor (s: string) : Result<Color, string> =
@@ -164,7 +165,8 @@ module FenParser =
                             (fun (empty, text) file ->
                                 match Map.tryFind (file, rank) state.Board with
                                 | Some piece -> 0, flush empty text + string (pieceToChar piece)
-                                | None -> empty + 1, text)
+                                | None -> empty + 1, text
+                            )
                             (0, "")
 
                     yield flush empty text

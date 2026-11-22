@@ -37,4 +37,3 @@ jobs:
       - name: Test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./eclair test
-

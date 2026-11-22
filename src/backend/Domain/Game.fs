@@ -548,7 +548,12 @@ module Game =
 
         {
             Board =
-                Map.ofList (rank White 0 backRank @ rank White 1 pawns @ rank Black 6 pawns @ rank Black 7 backRank)
+                Map.ofList (
+                    rank White 0 backRank
+                    @ rank White 1 pawns
+                    @ rank Black 6 pawns
+                    @ rank Black 7 backRank
+                )
             ActiveColor = White
             CastlingRights = {
                 WhiteKingSide = true
