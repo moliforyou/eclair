@@ -261,7 +261,15 @@ let private analyze env output =
 
     let analyzers = Analyzers.declared (read Analyzers.versionsFile)
     let root = Analyzers.packagesRoot ()
-    let paths = analyzers |> List.map (Analyzers.path root)
+    let local =
+        let dir = Path.Combine (env.Root, Analyzers.localAnalyzers)
+
+        if Directory.Exists dir then
+            Ok dir
+        else
+            Error (Analyzers.NotBuilt dir)
+
+    let paths = (analyzers |> List.map (Analyzers.path root)) @ [ local ]
 
     let problem =
         if analyzers.IsEmpty then

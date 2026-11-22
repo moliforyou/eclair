@@ -39,6 +39,9 @@
     <Project Path="tests/WebApi.Tests/ChessPlatform.WebApi.Tests.fsproj" />
   </Folder>
   <Folder Name="/tools/" />
+  <Folder Name="/tools/analyzers/">
+    <Project Path="tools/analyzers/DomainAnalyzers.fsproj" />
+  </Folder>
   <Folder Name="/tools/eclair/">
     <Project Path="tools/eclair/Eclair.fsproj" />
   </Folder>

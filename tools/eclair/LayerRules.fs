@@ -15,6 +15,7 @@ type Layer =
     | Runner
     | Client
     | Eclair
+    | DomainAnalyzers
 
 type PackagePolicy =
     | AnyPackage
@@ -41,6 +42,7 @@ let rule layer =
     | Runner -> allows [ WebApi; BackgroundWorkers ] AnyPackage
     | Client -> allows [ Domain; Contracts ] AnyPackage
     | Eclair -> allows [] AnyPackage
+    | DomainAnalyzers -> allows [] AnyPackage
 
 let ruleFile = $"tools/eclair/{__SOURCE_FILE__}"
 
