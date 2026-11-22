@@ -246,6 +246,73 @@ let layers env json args =
 
         exitCode
 
+let private analyze env output =
+    let log =
+        match output with
+        | Inherit -> env.Err
+        | Into writer -> writer
+
+    let read relative =
+        File.ReadAllText (Path.Combine (env.Root, relative))
+
+    let packages = Analyzers.packages (read Analyzers.eclairProject)
+    let versions = Analyzers.versions (read Analyzers.versionsFile)
+    let root = Analyzers.packagesRoot ()
+    let paths = packages |> List.map (Analyzers.path root versions)
+
+    match
+        paths
+        |> List.tryPick (
+            function
+            | Error problem -> Some problem
+            | Ok _ -> None
+        )
+    with
+    | Some problem ->
+        log.WriteLine (Analyzers.describe problem)
+        2
+    | None ->
+        let projects =
+            [ "src"; "tools"; "tests" ]
+            |> List.collect (fun dir -> findProjects (Path.Combine (env.Root, dir)))
+            |> List.map (display env)
+
+        let report =
+            Path.Combine (Path.GetTempPath (), $"eclair-analyze-{Environment.ProcessId}.sarif")
+
+        let args = [
+            "fsharp-analyzers"
+            "--project"
+            yield! projects
+            "--analyzers-path"
+            yield! List.choose Result.toOption paths
+            "--code-root"
+            env.Root
+            "--report"
+            report
+            "--fail-on-type-errors"
+        ]
+
+        let exitCode = runProcess env "dotnet" args output
+
+        if not (File.Exists report) then
+            log.WriteLine "analyze: fsharp-analyzers wrote no report, so nothing was checked. Its output above says why."
+            if exitCode = 0 then 1 else exitCode
+        else
+            let found = Analyzers.findings (File.ReadAllText report)
+            File.Delete report
+
+            for finding in found do
+                log.WriteLine (Analyzers.format finding)
+
+            if exitCode <> 0 then
+                exitCode
+            elif not found.IsEmpty then
+                1
+            else
+                log.WriteLine $"analyze: {projects.Length} projects, no findings."
+                0
+
 let private infraSuites = set [ "Infra.Tests" ]
 
 let private suites env scope = [
@@ -279,6 +346,12 @@ let private layersStep env = {
         function
         | Inherit -> layers env false []
         | Into writer -> layers { env with Out = writer; Err = writer } false []
+}
+
+let private analyzeStep env = {
+    Name = "fsharp-analyzers"
+    Next = "Fix each finding above. The analyzer packages are listed in tools/eclair/Eclair.fsproj."
+    Run = analyze env
 }
 
 let run env argv =
@@ -317,6 +390,7 @@ let run env argv =
         | Format false -> steps [ [ format ] ]
         | Format true -> steps [ [ formatCheck ] ]
         | Lint -> steps [ [ formatCheck ]; [ layersStep env ] ]
+        | Analyze -> steps [ [ build ]; [ analyzeStep env ] ]
         | EnvUp -> steps [ [ step env "Start Docker, then rerun." "docker compose up -d --wait" ] ]
         | EnvDown -> steps [ [ step env "Start Docker, then rerun." "docker compose down" ] ]
         | Run -> steps [ [ step env runnerNeeds runner ] ]

@@ -19,16 +19,35 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
+      # BOOTSTRAP (temporary): keep going past formatting so the build can write lock files.
       - name: Check formatting
+        continue-on-error: true
         run: ./eclair format && git diff --exit-code -- src tests tools
 
       - name: Check layer rules
         run: ./eclair layers
 
       - name: Build
+        id: build
         run: ./eclair build
+
+      - name: Analyze
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ./eclair analyze
 
       # Infra.Tests uses Testcontainers; Docker is preinstalled on ubuntu runners
       - name: Test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./eclair test
 
+      # BOOTSTRAP (temporary): hand the generated lock files and Fantomas output back.
+      - name: Collect bootstrap files
+        if: ${{ always() }}
+        run: git diff > fantomas.patch; git status --short
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: bootstrap
+          path: |
+            fantomas.patch
+            **/packages.lock.json

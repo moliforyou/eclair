@@ -1,7 +1,5 @@
 module Tests
 
-#nowarn "0044"
-
 open Expecto
 open Testcontainers.PostgreSql
 open Testcontainers.Redis
@@ -22,13 +20,13 @@ let expectError =
 
 let pgContainer =
     lazy
-        (let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
+        (let c = PostgreSqlBuilder("postgres:16-alpine").Build ()
          c.StartAsync().GetAwaiter().GetResult ()
          c)
 
 let redisContainer =
     lazy
-        (let c = RedisBuilder().WithImage("redis:7-alpine").Build ()
+        (let c = RedisBuilder("redis:7-alpine").Build ()
          c.StartAsync().GetAwaiter().GetResult ()
          c)
 

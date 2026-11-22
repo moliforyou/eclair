@@ -9,8 +9,15 @@
 
   <ItemGroup>
     <Compile Include="LayerRules.fs" />
+    <Compile Include="Analyzers.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <!-- Restored only so ./eclair analyze can load them. Nothing from them is compiled in. -->
+  <ItemGroup>
+    <PackageReference Include="G-Research.FSharp.Analyzers" FSharpAnalyzer="true" PrivateAssets="all" ExcludeAssets="all" />
+    <PackageReference Include="Ionide.Analyzers" FSharpAnalyzer="true" PrivateAssets="all" ExcludeAssets="all" />
   </ItemGroup>
 
 </Project>

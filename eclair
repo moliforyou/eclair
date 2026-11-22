@@ -7,8 +7,8 @@ current="$builds/current"
 
 stale() {
   [ ! -f "$current" ] ||
-    [ -n "$(find "$root/tools/eclair" "$root/Directory.Build.props" \( -name bin -o -name obj \) -prune \
-      -o \( -name '*.fs' -o -name '*.fsproj' -o -name Directory.Build.props \) -newer "$current" -print -quit)" ]
+    [ -n "$(find "$root/tools/eclair" "$root/Directory.Build.props" "$root/Directory.Packages.props" \( -name bin -o -name obj \) -prune \
+      -o \( -name '*.fs' -o -name '*.fsproj' -o -name Directory.Build.props -o -name Directory.Packages.props \) -newer "$current" -print -quit)" ]
 }
 
 # Each build gets its own directory, so a racing build never overwrites a DLL that a

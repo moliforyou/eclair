@@ -10,6 +10,7 @@ type Command =
     | Test of TestScope
     | Format of check: bool
     | Lint
+    | Analyze
     | Layers of projects: string list
     | EnvUp
     | EnvDown
@@ -82,6 +83,16 @@ let entries = [
         Options = []
         Example = "./eclair lint"
         Parse = noArgs Lint
+    }
+    {
+        Name = "analyze"
+        Usage = "analyze"
+        Summary = "Build, then run the F# analyzers over every project."
+        Details =
+            $"Runs fsharp-analyzers on every .fsproj under src, tools and tests, with the analyzer packages marked FSharpAnalyzer=\"true\" in {Analyzers.eclairProject}. Any finding fails the run, whatever its level, and so does a project that does not type check."
+        Options = []
+        Example = "./eclair analyze"
+        Parse = noArgs Analyze
     }
     {
         Name = "layers"

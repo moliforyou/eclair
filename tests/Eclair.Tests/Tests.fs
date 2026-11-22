@@ -130,5 +130,72 @@ let tests =
         }
     ]
 
+let sarif = """{
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            { "level": "error", "message": { "text": "The value or constructor 'x' is not defined." } }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "IONIDE-004",
+          "level": "warning",
+          "message": { "text": "Use a postfix generic type." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/backend/Domain/Game.fs" },
+                "region": { "startLine": 12, "startColumn": 5 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}"""
+
+[<Tests>]
+let analyzerTests =
+    testList "analyze" [
+        test "every analyzer package has a central version" {
+            let read relative =
+                File.ReadAllText (Path.Combine (repoRoot, relative))
+
+            let packages = Analyzers.packages (read Analyzers.eclairProject)
+            let versions = Analyzers.versions (read Analyzers.versionsFile)
+
+            Expect.isNonEmpty packages "Eclair.fsproj marks at least one analyzer package"
+
+            for package in packages do
+                Expect.isTrue (versions.ContainsKey package) $"{package} has a PackageVersion"
+        }
+
+        test "a SARIF report yields its results and the tool's notifications" {
+            let found = Analyzers.findings sarif |> List.map Analyzers.format
+
+            Expect.equal
+                found
+                [
+                    "(no location): error tool: The value or constructor 'x' is not defined."
+                    "src/backend/Domain/Game.fs(12,5): warning IONIDE-004: Use a postfix generic type."
+                ]
+                "findings"
+        }
+
+        test "a clean report has no findings" {
+            let found =
+                Analyzers.findings """{ "runs": [ { "invocations": [ { "executionSuccessful": true } ], "results": [] } ] }"""
+
+            Expect.isEmpty found "no findings"
+        }
+    ]
+
 [<EntryPoint>]
-let main args = runTestsWithCLIArgs [] args tests
+let main args =
+    runTestsWithCLIArgs [] args (testList "eclair" [ tests; analyzerTests ])

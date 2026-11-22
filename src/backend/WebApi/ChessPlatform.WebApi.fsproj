@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Falco" Version="5.2.0" />
+    <PackageReference Include="Falco" />
   </ItemGroup>
 
 </Project>

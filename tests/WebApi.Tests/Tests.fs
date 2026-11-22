@@ -1,8 +1,5 @@
 module Tests
 
-#nowarn "3261"
-#nowarn "0760"
-
 open System
 open System.Net
 open System.Net.Http

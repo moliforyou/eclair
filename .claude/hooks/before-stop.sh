@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop: if F# or project files changed, require layer check + build + unit tests to pass.
+# Stop: if F# or project files changed, require layer check, build, unit tests and analyzers to pass.
 set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
 
@@ -8,7 +8,7 @@ session=$(printf '%s' "$input" | sed -nE 's/.*"session_id"[[:space:]]*:[[:space:
 state="${TMPDIR:-/tmp}/eclair-stop-${session:-default}"
 
 base=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD)
-paths=(':(glob)**/*.fs' ':(glob)**/*.fsi' ':(glob)**/*.fsproj' 'Directory.Build.props' 'ChessPlatform.slnx' 'tools' 'eclair')
+paths=(':(glob)**/*.fs' ':(glob)**/*.fsi' ':(glob)**/*.fsproj' 'Directory.Build.props' 'Directory.Packages.props' '.config/dotnet-tools.json' 'ChessPlatform.slnx' 'tools' 'eclair')
 changes=$( { git diff "$base" -- "${paths[@]}"; git ls-files --others --exclude-standard -- "${paths[@]}" | xargs cat 2>/dev/null; } )
 [ -z "$changes" ] && exit 0
 
@@ -21,7 +21,7 @@ if ! command -v dotnet >/dev/null; then
 fi
 
 log=$(mktemp)
-if ./eclair layers >"$log" 2>&1 && ./eclair test --unit >>"$log" 2>&1; then
+if ./eclair layers >"$log" 2>&1 && ./eclair test --unit >>"$log" 2>&1 && ./eclair analyze >>"$log" 2>&1; then
   echo "$hash" > "$state.green"; rm -f "$state.tries" "$log"; exit 0
 fi
 
@@ -32,6 +32,6 @@ if [ "$tries" -ge 3 ]; then
   echo "before-stop: still failing after 3 attempts; stopping anyway. Tell the user the build or tests are red." >&2
   tail -n 40 "$log" >&2; rm -f "$log"; exit 0
 fi
-echo "Build, layer check or unit tests failed (attempt $tries of 3). Fix this before finishing:" >&2
-grep -E "error|Failed|failed|layers:" "$log" | head -n 40 >&2 || tail -n 40 "$log" >&2
+echo "Build, layer check, unit tests or analyzers failed (attempt $tries of 3). Fix this before finishing:" >&2
+grep -E "error|warning|Failed|failed|layers:|analyze:" "$log" | head -n 40 >&2 || tail -n 40 "$log" >&2
 rm -f "$log"; exit 2
