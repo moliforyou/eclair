@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "FSharp.Analyzers.SDK": {
+        "type": "Direct",
+        "requested": "[0.43.0, )",
+        "resolved": "0.43.0",
+        "contentHash": "JchnwmoH/xRYLyCnASZI1XQBEL8Rw7qn4M0dLx2b6VlbtS2OLQwRZd+Gy6Rcq61hwaE+Pni7ks0Z5bVqe/ouDQ==",
+        "dependencies": {
+          "FSharp.Compiler.Service": "[43.13.404]",
+          "FSharp.Core": "[10.1.404]",
+          "McMaster.NETCore.Plugins": "2.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.11"
+        }
+      },
+      "FSharp.Core": {
+        "type": "Direct",
+        "requested": "[10.1.404, )",
+        "resolved": "10.1.404",
+        "contentHash": "NzyMm8uoa4ULzpQwMcq/4F2zCWGKduuGwxdRSi48kEahNlykKJBUSmb9H/6SFbS0fDd+LqQum0BOkDp8pD8xRg=="
+      },
+      "FSharp.Compiler.Service": {
+        "type": "Transitive",
+        "resolved": "43.13.404",
+        "contentHash": "7IzyvbV1GpCY2co8gebO1U7DGtjGQh0sXPSMeSHEujlFIKPKmZ1FpBzaB37K/1DXfkoWOxreylpf7F0RPQcgZA==",
+        "dependencies": {
+          "FSharp.Core": "[10.1.404]"
+        }
+      },
+      "McMaster.NETCore.Plugins": {
+        "type": "Transitive",
+        "resolved": "2.0.0",
+        "contentHash": "pmmrI3qPE53xEJEcg575jQeDNPzMWfNJO8/SASlB9PLPrGVrsyVNFRrvfo+3BzcbQxfUBF1//gTOiJ82dOTlTw=="
+      },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.11",
+        "contentHash": "/a1aJz4m7ylhEDf25ugQChLQoN5XwoGjWw/BoR/ZWWKsO1v4DdJElS1uyngahz4B/eOzjFk1KNTkarRLE5wsIg=="
+      },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.11",
+        "contentHash": "Ljd0Uxoq5XpScD2Bg0nM/r3mwx7Ao5Uq24eo2ARxbGvqJ7Zht6rt2cJtwVRH4Cv+1ZVMdXz6TB43KbpmsxRrvQ==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11"
+        }
+      }
+    }
+  }
+}

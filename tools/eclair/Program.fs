@@ -261,6 +261,7 @@ let private analyze env output =
 
     let analyzers = Analyzers.declared (read Analyzers.versionsFile)
     let root = Analyzers.packagesRoot ()
+
     let local =
         let dir = Path.Combine (env.Root, Analyzers.localAnalyzers)
 

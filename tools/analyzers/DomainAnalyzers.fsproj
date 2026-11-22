@@ -5,8 +5,6 @@
     <!-- One fixed folder for every configuration, so ./eclair analyze always finds the assembly. -->
     <OutputPath>bin/</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <!-- BOOTSTRAP (temporary): no lock file yet. -->
-    <RestoreLockedMode>false</RestoreLockedMode>
   </PropertyGroup>
 
   <ItemGroup>

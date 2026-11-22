@@ -1,21 +1,23 @@
 module DomainRules
 
 open FSharp.Analyzers.SDK
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 
 /// Folders whose code must stay pure: no mutable state and no exceptions.
 let pureFolders = [ "src/backend/Domain/" ]
 
 /// Functions that throw, by the module that declares them.
-let private throwing = set [
-    "Microsoft.FSharp.Core.Operators", "failwith"
-    "Microsoft.FSharp.Core.Operators", "raise"
-    "Microsoft.FSharp.Core.Operators", "reraise"
-    "Microsoft.FSharp.Core.Operators", "invalidArg"
-    "Microsoft.FSharp.Core.Operators", "invalidOp"
-    "Microsoft.FSharp.Core.Operators", "nullArg"
-    "Microsoft.FSharp.Core.ExtraTopLevelOperators", "failwithf"
-]
+let private throwing =
+    set [
+        "Microsoft.FSharp.Core.Operators", "failwith"
+        "Microsoft.FSharp.Core.Operators", "raise"
+        "Microsoft.FSharp.Core.Operators", "reraise"
+        "Microsoft.FSharp.Core.Operators", "invalidArg"
+        "Microsoft.FSharp.Core.Operators", "invalidOp"
+        "Microsoft.FSharp.Core.Operators", "nullArg"
+        "Microsoft.FSharp.Core.ExtraTopLevelOperators", "failwithf"
+    ]
 
 let isPure (fileName: string) =
     let path = fileName.Replace ('\\', '/')
@@ -58,9 +60,10 @@ let check (uses: FSharpSymbolUse seq) = [
 
 [<CliAnalyzer("DomainPurityAnalyzer", "Domain code has no mutable state and throws no exceptions.")>]
 let domainPurity: Analyzer<CliContext> =
-    fun context -> async {
-        if isPure context.FileName then
-            return check (context.CheckFileResults.GetAllUsesOfAllSymbolsInFile ())
-        else
-            return []
-    }
+    fun context ->
+        async {
+            if isPure context.FileName then
+                return check (context.CheckFileResults.GetAllUsesOfAllSymbolsInFile ())
+            else
+                return []
+        }
