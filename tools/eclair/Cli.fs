@@ -90,7 +90,7 @@ let entries = [
         Usage = "analyze"
         Summary = "Build, then run the F# analyzers over every project."
         Details =
-            $"Runs fsharp-analyzers on every .fsproj under src, tools and tests, with the analyzer packages marked FSharpAnalyzer=\"true\" in {Analyzers.eclairProject}. Any finding fails the run, whatever its level, and so does a project that does not type check."
+            $"Runs fsharp-analyzers on every .fsproj under src, tools and tests, with the FSharpAnalyzer packages listed in {Analyzers.versionsFile}. Any finding fails the run, whatever its level, and so does a project that does not type check."
         Options = []
         Example = "./eclair analyze"
         Parse = noArgs Analyze

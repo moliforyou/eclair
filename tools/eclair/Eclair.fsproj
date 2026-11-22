@@ -14,10 +14,9 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
 
-  <!-- Restored only so ./eclair analyze can load them. Nothing from them is compiled in. -->
+  <!-- Downloads the analyzers listed in Directory.Packages.props for ./eclair analyze. -->
   <ItemGroup>
-    <PackageReference Include="G-Research.FSharp.Analyzers" FSharpAnalyzer="true" PrivateAssets="all" ExcludeAssets="all" />
-    <PackageReference Include="Ionide.Analyzers" FSharpAnalyzer="true" PrivateAssets="all" ExcludeAssets="all" />
+    <PackageDownload Include="@(FSharpAnalyzer)" />
   </ItemGroup>
 
 </Project>

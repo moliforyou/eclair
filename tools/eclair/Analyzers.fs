@@ -5,34 +5,30 @@ open System.IO
 open System.Text.Json
 open System.Xml.Linq
 
-let eclairProject = "tools/eclair/Eclair.fsproj"
 let versionsFile = "Directory.Packages.props"
-
-let private elements name (xml: string) =
-    XDocument.Parse(xml).Descendants ()
-    |> Seq.filter (fun element -> element.Name.LocalName = name)
 
 let private attribute name (element: XElement) =
     element.Attribute (XName.Get name) |> Option.ofObj |> Option.map _.Value
 
-/// The analyzer packages: PackageReference items in Eclair.fsproj marked FSharpAnalyzer="true".
-let packages projectXml =
-    elements "PackageReference" projectXml
-    |> Seq.filter (fun element -> attribute "FSharpAnalyzer" element = Some "true")
-    |> Seq.choose (attribute "Include")
-    |> List.ofSeq
+type Declared = { Package: string; Version: string }
 
-let versions propsXml =
-    elements "PackageVersion" propsXml
+/// The FSharpAnalyzer items in Directory.Packages.props. Versions are exact, like [0.22.0].
+let declared (propsXml: string) =
+    XDocument.Parse(propsXml).Descendants ()
+    |> Seq.filter (fun element -> element.Name.LocalName = "FSharpAnalyzer")
     |> Seq.choose (fun element ->
         match attribute "Include" element, attribute "Version" element with
-        | Some name, Some version -> Some (name, version)
+        | Some package, Some version ->
+            Some {
+                Package = package
+                Version = version.Trim('[', ']')
+            }
         | _ -> None
     )
-    |> Map.ofSeq
+    |> List.ofSeq
 
 type Problem =
-    | NoVersion of package: string
+    | NoAnalyzers
     | NotRestored of package: string * path: string
 
 let packagesRoot () =
@@ -42,23 +38,21 @@ let packagesRoot () =
     | path -> path
 
 /// Where the tool should look for one package's analyzer assemblies.
-let path root (versions: Map<string, string>) (package: string) =
-    match Map.tryFind package versions with
-    | None -> Error (NoVersion package)
-    | Some version ->
-        let dir = Path.Combine (root, package.ToLowerInvariant (), version.ToLowerInvariant ())
-        let fs = Path.Combine (dir, "analyzers", "dotnet", "fs")
+let path root analyzer =
+    let dir =
+        Path.Combine (root, analyzer.Package.ToLowerInvariant (), analyzer.Version.ToLowerInvariant ())
 
-        if Directory.Exists fs then Ok fs
-        elif Directory.Exists dir then Ok dir
-        else Error (NotRestored (package, dir))
+    let fs = Path.Combine (dir, "analyzers", "dotnet", "fs")
+
+    if Directory.Exists fs then Ok fs
+    elif Directory.Exists dir then Ok dir
+    else Error (NotRestored (analyzer.Package, dir))
 
 let describe problem =
     match problem with
-    | NoVersion package ->
-        $"analyze: {package} has no PackageVersion in {versionsFile}. Add one next to the other analyzers."
+    | NoAnalyzers -> $"analyze: {versionsFile} lists no FSharpAnalyzer items, so there is nothing to run."
     | NotRestored (package, dir) ->
-        $"analyze: {package} is not restored at {dir}. Run ./eclair build first, which restores it."
+        $"analyze: {package} is not downloaded to {dir}. Run ./eclair build first, which restores it."
 
 type Finding = {
     Rule: string

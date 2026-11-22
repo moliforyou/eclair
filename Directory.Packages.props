@@ -18,10 +18,14 @@
     <PackageVersion Include="Testcontainers.Redis" Version="4.17.0" />
     <PackageVersion Include="YoloDev.Expecto.TestSdk" Version="0.15.6" />
   </ItemGroup>
-  <ItemGroup Label="F# analyzers, run by ./eclair analyze">
-    <!-- Each must be built against the FSharp.Analyzers.SDK that the fsharp-analyzers tool
-         in .config/dotnet-tools.json ships. Bump them together. -->
-    <PackageVersion Include="G-Research.FSharp.Analyzers" Version="0.24.0" />
-    <PackageVersion Include="Ionide.Analyzers" Version="0.22.0" />
+  <!--
+    F# analyzers, run by ./eclair analyze. Eclair.fsproj downloads them with PackageDownload, so
+    they never join a project's dependency graph. Versions must be exact, in brackets. Each package
+    must be built against the FSharp.Analyzers.SDK that the fsharp-analyzers tool in
+    .config/dotnet-tools.json ships, so bump them together.
+  -->
+  <ItemGroup>
+    <FSharpAnalyzer Include="G-Research.FSharp.Analyzers" Version="[0.24.0]" />
+    <FSharpAnalyzer Include="Ionide.Analyzers" Version="[0.22.0]" />
   </ItemGroup>
 </Project>

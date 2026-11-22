@@ -259,19 +259,22 @@ let private analyze env output =
     let read relative =
         File.ReadAllText (Path.Combine (env.Root, relative))
 
-    let packages = Analyzers.packages (read Analyzers.eclairProject)
-    let versions = Analyzers.versions (read Analyzers.versionsFile)
+    let analyzers = Analyzers.declared (read Analyzers.versionsFile)
     let root = Analyzers.packagesRoot ()
-    let paths = packages |> List.map (Analyzers.path root versions)
+    let paths = analyzers |> List.map (Analyzers.path root)
 
-    match
-        paths
-        |> List.tryPick (
-            function
-            | Error problem -> Some problem
-            | Ok _ -> None
-        )
-    with
+    let problem =
+        if analyzers.IsEmpty then
+            Some Analyzers.NoAnalyzers
+        else
+            paths
+            |> List.tryPick (
+                function
+                | Error problem -> Some problem
+                | Ok _ -> None
+            )
+
+    match problem with
     | Some problem ->
         log.WriteLine (Analyzers.describe problem)
         2
@@ -354,7 +357,7 @@ let private layersStep env = {
 
 let private analyzeStep env = {
     Name = "fsharp-analyzers"
-    Next = "Fix each finding above. The analyzer packages are listed in tools/eclair/Eclair.fsproj."
+    Next = "Fix each finding above. The analyzer packages are listed in Directory.Packages.props."
     Run = analyze env
 }
 

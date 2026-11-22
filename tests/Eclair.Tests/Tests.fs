@@ -163,17 +163,14 @@ let sarif = """{
 [<Tests>]
 let analyzerTests =
     testList "analyze" [
-        test "every analyzer package has a central version" {
-            let read relative =
-                File.ReadAllText (Path.Combine (repoRoot, relative))
+        test "the declared analyzers parse with exact versions" {
+            let declared =
+                Analyzers.declared (File.ReadAllText (Path.Combine (repoRoot, Analyzers.versionsFile)))
 
-            let packages = Analyzers.packages (read Analyzers.eclairProject)
-            let versions = Analyzers.versions (read Analyzers.versionsFile)
+            Expect.isNonEmpty declared "Directory.Packages.props lists at least one analyzer"
 
-            Expect.isNonEmpty packages "Eclair.fsproj marks at least one analyzer package"
-
-            for package in packages do
-                Expect.isTrue (versions.ContainsKey package) $"{package} has a PackageVersion"
+            for analyzer in declared do
+                Expect.isFalse (analyzer.Version.Contains '[') $"{analyzer.Package} has its brackets removed"
         }
 
         test "a SARIF report yields its results and the tool's notifications" {
