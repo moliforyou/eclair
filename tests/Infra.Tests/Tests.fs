@@ -50,8 +50,7 @@ let tests =
             Expect.isTrue (Result.isOk res1) "create should succeed"
 
             let! loadedOpt = repo.LoadGame (gameId)
-            Expect.isTrue (Option.isSome loadedOpt) "load game should return Some record"
-            let loaded = Option.get loadedOpt
+            let loaded = Expect.wantSome loadedOpt "load game should return Some record"
             Expect.equal loaded.WhitePlayerId "w1" "WhitePlayerId should match"
             Expect.equal loaded.BlackPlayerId "b1" "BlackPlayerId should match"
             Expect.equal loaded.State.Version 0 "Version should match"

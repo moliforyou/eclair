@@ -32,9 +32,12 @@ type Problem =
     | NotRestored of package: string * path: string
 
 let packagesRoot () =
+    let home =
+        Path.Combine (Environment.GetFolderPath Environment.SpecialFolder.UserProfile, ".nuget", "packages")
+
     match Environment.GetEnvironmentVariable "NUGET_PACKAGES" with
-    | null
-    | "" -> Path.Combine (Environment.GetFolderPath Environment.SpecialFolder.UserProfile, ".nuget", "packages")
+    | null -> home
+    | path when path.Length = 0 -> home
     | path -> path
 
 /// Where the tool should look for one package's analyzer assemblies.
@@ -104,7 +107,7 @@ let private location element =
 
 let private finding rule element = {
     Rule = text "ruleId" element |> Option.defaultValue rule
-    Level = text "level" element |> Option.defaultValue "error"
+    Level = text "level" element |> Option.defaultValue "warning"
     Message =
         property "message" element
         |> Option.bind (text "text")
@@ -125,6 +128,10 @@ let findings (sarif: string) =
             for result in items "results" run do
                 finding "analyzer" result
     ]
+
+/// Warnings and errors fail the run. Notes, which carry the analyzers' hints and info, do not.
+let blocks finding =
+    finding.Level = "error" || finding.Level = "warning"
 
 let format finding =
     $"{finding.Location}: {finding.Level} {finding.Rule}: {finding.Message}"

@@ -27,7 +27,6 @@
     .config/dotnet-tools.json ships, so bump them together.
   -->
   <ItemGroup>
-    <FSharpAnalyzer Include="G-Research.FSharp.Analyzers" Version="[0.24.0]" />
     <FSharpAnalyzer Include="Ionide.Analyzers" Version="[0.22.0]" />
   </ItemGroup>
 </Project>

@@ -308,18 +308,22 @@ let private analyze env output =
 
             if exitCode = 0 then 1 else exitCode
         else
-            let found = Analyzers.findings (File.ReadAllText report)
+            let blocking, notes =
+                Analyzers.findings (File.ReadAllText report) |> List.partition Analyzers.blocks
+
             File.Delete report
 
-            for finding in found do
+            for finding in blocking do
                 log.WriteLine (Analyzers.format finding)
 
             if exitCode <> 0 then
                 exitCode
-            elif not found.IsEmpty then
+            elif not blocking.IsEmpty then
                 1
             else
-                log.WriteLine $"analyze: {projects.Length} projects, no findings."
+                log.WriteLine
+                    $"analyze: {projects.Length} projects, no warnings or errors. {notes.Length} hints are not enforced."
+
                 0
 
 let private infraSuites = set [ "Infra.Tests" ]

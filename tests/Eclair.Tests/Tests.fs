@@ -186,6 +186,23 @@ let analyzerTests =
                 "findings"
         }
 
+        test "notes do not block, warnings and errors do" {
+            let levels =
+                Analyzers.findings sarif
+                |> List.map (fun finding -> finding.Level, Analyzers.blocks finding)
+
+            Expect.equal levels [ "error", true; "warning", true ] "levels"
+
+            let note = {
+                Analyzers.Rule = "IONIDE-012"
+                Analyzers.Level = "note"
+                Analyzers.Message = "Consider adding [<Struct>]"
+                Analyzers.Location = "(no location)"
+            }
+
+            Expect.isFalse (Analyzers.blocks note) "a note does not block"
+        }
+
         test "a clean report has no findings" {
             let found =
                 Analyzers.findings

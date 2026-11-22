@@ -15,6 +15,8 @@
     -->
     <WarnOn>$(WarnOn);1178;1182;3388;3389;3395;3559;3560</WarnOn>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- CI fails when a packages.lock.json is out of date instead of rewriting it. -->
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
     <!-- Central package management drops the SDK's implicit FSharp.Core, so reference it here,
          pinned in Directory.Packages.props. -->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>

@@ -235,13 +235,8 @@ let kingTests =
         }
 
         test "cannot castle through check" {
-            let fen = "r3k2r/pppppppp/8/8/1b6/8/PPPPPPPP/R3K2R w KQkq - 0 1"
-            let fen2 = "r3k2r/pppppppp/8/8/8/5b2/PPPPPPPP/R3K2R w KQkq - 0 1"
-            let state = FenParser.parse fen2 |> unwrap
-            let fen3 = "4k3/8/8/8/8/3b4/8/R3K2R w KQ - 0 1"
-            let state = FenParser.parse fen3 |> unwrap
-            let fen4 = "4k3/8/8/8/4r3/8/8/R3K2R w KQ - 0 1"
-            let state = FenParser.parse fen4 |> unwrap
+            let fen = "4k3/8/8/8/4r3/8/8/R3K2R w KQ - 0 1"
+            let state = FenParser.parse fen |> unwrap
             let resultKS = play state (4, 0) (6, 0)
             let resultQS = play state (4, 0) (2, 0)
             Expect.isTrue "" (Result.isError resultKS)
@@ -327,7 +322,6 @@ let errorTests =
         }
 
         test "game already over" {
-            let fen = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
             let mateState = FenParser.parse "k7/2Q5/1K6/8/8/8/8/8 b - - 0 1" |> unwrap
 
             let mateState = {
@@ -340,11 +334,9 @@ let errorTests =
         }
 
         test "move leaves king in check" {
-            let fen = "4k3/8/8/8/4r3/8/4P3/4K3 w - - 0 1"
+            let fen = "4k3/8/8/8/4r3/8/4N3/4K3 w - - 0 1"
             let state = FenParser.parse fen |> unwrap
-            let fen2 = "4k3/8/8/8/4r3/8/4N3/4K3 w - - 0 1"
-            let state2 = FenParser.parse fen2 |> unwrap
-            let result = play state2 (4, 1) (3, 3)
+            let result = play state (4, 1) (3, 3)
             Expect.isTrue "" (Result.isError result)
         }
     ]

@@ -193,7 +193,7 @@ module FenParser =
                 + (if state.CastlingRights.BlackKingSide then "k" else "")
                 + (if state.CastlingRights.BlackQueenSide then "q" else "")
 
-            if s = "" then "-" else s
+            if System.String.IsNullOrEmpty s then "-" else s
 
         let epTarget =
             match state.EnPassantTarget with
