@@ -17,6 +17,7 @@ type Command =
     | Run
     | Setup
 
+[<NoEquality; NoComparison>]
 type Entry = {
     Name: string
     Usage: string
@@ -149,6 +150,7 @@ let globalOptions = [
     "--help, -h", "Show help for eclair or for one command."
 ]
 
+[<NoEquality; NoComparison>]
 type Request =
     | Execute of Command * json: bool
     | Help of Entry option

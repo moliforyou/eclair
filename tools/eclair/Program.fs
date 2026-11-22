@@ -9,22 +9,26 @@ open System.Xml
 open Cli
 open LayerRules
 
+[<NoComparison>]
 type Env = {
     Root: string
     Out: TextWriter
     Err: TextWriter
 }
 
+[<NoComparison>]
 type Output =
     | Inherit
     | Into of TextWriter
 
+[<NoEquality; NoComparison>]
 type Step = {
     Name: string
     Next: string
     Run: Output -> int
 }
 
+[<NoEquality; NoComparison>]
 type StepResult = {
     Step: Step
     ExitCode: int
