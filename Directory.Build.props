@@ -1,8 +1,27 @@
 <Project>
   <PropertyGroup>
-    <AnalysisLevel>latest-all</AnalysisLevel>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Opt-in F# warnings, all errors through TreatWarningsAsErrors:
+      1178 a type silently loses equality or comparison
+      1182 unused variable
+      3388 additional implicit upcast
+      3389 implicit numeric widening
+      3395 implicit conversion of a method argument
+      3559 type inferred as obj
+      3560 copy-and-update that changes every field
+      Keep them in this one property: a second WarnOn replaces the first.
+    -->
+    <WarnOn>$(WarnOn);1178;1182;3388;3389;3395;3559;3560</WarnOn>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- CI fails when a packages.lock.json is out of date instead of rewriting it. -->
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <!-- Central package management drops the SDK's implicit FSharp.Core, so reference it here,
+         pinned in Directory.Packages.props. -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
 </Project>

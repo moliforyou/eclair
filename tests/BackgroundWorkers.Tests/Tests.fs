@@ -47,7 +47,7 @@ type MockMessageBus() =
         member _.PublishMatchFound(gameId, white, black) =
             async { publishedMatch <- Some (gameId, white, black) }
 
-        member _.SubscribeMatchFound(handler) =
+        member _.SubscribeMatchFound _ =
             async {
                 return
                     { new System.IDisposable with
@@ -60,15 +60,13 @@ type MockMessageBus() =
         member _.RemoveFromMatchmakingQueue _ = async { () }
 
 
-let waitForSubscription (bus: MockMessageBus) =
+let rec waitForSubscription (bus: MockMessageBus) =
     async {
-        let mutable handler = None
-
-        while Option.isNone handler do
+        match bus.SubscribeHandler with
+        | Some handler -> return handler
+        | None ->
             do! Async.Sleep 10
-            handler <- bus.SubscribeHandler
-
-        return Option.get handler
+            return! waitForSubscription bus
     }
 
 type MockGameRepository(initialGames: Map<string, GameRecord>) =
@@ -264,16 +262,17 @@ let tests =
 
             let! _ = Async.AwaitTask (worker.StopAsync (cancellationTokenSource.Token))
 
-            Expect.isTrue matchFound.IsSome "Match found should be published"
-            let gameId, white, black = matchFound.Value
+            let gameId, white, black =
+                Expect.wantSome matchFound "Match found should be published"
+
             Expect.isTrue (gameId.StartsWith ("game_")) "gameId should start with game_"
             Expect.isTrue (white = "playerA" || white = "playerB") "White player should be one of the matched players"
             Expect.isTrue (black = "playerA" || black = "playerB") "Black player should be one of the matched players"
             Expect.notEqual white black "White and Black should not be the same player"
 
-            let createdGame = Map.tryFind gameId repo.Games
-            Expect.isTrue createdGame.IsSome "Created game should be in the repository"
-            let record = createdGame.Value
+            let record =
+                Expect.wantSome (Map.tryFind gameId repo.Games) "Created game should be in the repository"
+
             Expect.equal record.WhitePlayerId white "White player ID must match record"
             Expect.equal record.BlackPlayerId black "Black player ID must match record"
         }

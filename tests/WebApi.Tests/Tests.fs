@@ -1,8 +1,5 @@
 module Tests
 
-#nowarn "3261"
-#nowarn "0760"
-
 open System
 open System.Net
 open System.Net.Http
@@ -108,10 +105,10 @@ type MockBus() =
         member _.RemoveFromMatchmakingQueue user = async { dequeued <- user :: dequeued }
 
 
-type AppFactory(repo: IGameRepository, bus: IMessageBus) =
+type AppFactory(repo: IGameRepository, ?bus: IMessageBus) =
     inherit WebApplicationFactory<Program.Marker>()
 
-    new(repo: IGameRepository) = AppFactory (repo, MockBus () :> IMessageBus)
+    let bus = defaultArg bus (MockBus () :> IMessageBus)
 
     override this.ConfigureWebHost(builder) =
         builder.UseSolutionRelativeContentRoot ("src/backend/WebApi") |> ignore
@@ -272,7 +269,10 @@ let tests =
 
             let! (response3: System.Net.Http.HttpResponseMessage) = client.GetAsync ("/api/games/game_int_1")
             Expect.equal response3.StatusCode HttpStatusCode.OK "Get game should return 200"
-            let! (gameDetails: GameDetailsDto) = response3.Content.ReadFromJsonAsync<GameDetailsDto> ()
+            let! body = response3.Content.ReadFromJsonAsync<GameDetailsDto> ()
+
+            let gameDetails =
+                Expect.wantSome (Option.ofObj body) "Get game should return a body"
 
             Expect.equal gameDetails.Turn "w" "Turn should be White's after 1. e4 e5"
 
@@ -609,7 +609,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MoveHandler)
 
-            let handler = Option.get bus.MoveHandler
+            let handler =
+                Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+
             do! Async.StartAsTask (handler "g1")
 
             Expect.equal hub.Sent [ ("group:g1", "MovePlayed") ] "Should broadcast MovePlayed to the game group"
@@ -628,7 +630,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MoveHandler)
 
-            let handler = Option.get bus.MoveHandler
+            let handler =
+                Expect.wantSome bus.MoveHandler "The broadcaster should subscribe to moves"
+
             do! Async.StartAsTask (handler "ghost-game")
 
             Expect.equal hub.Sent [] "Should not broadcast anything for an unknown game"
@@ -646,7 +650,9 @@ let broadcasterTests =
             do! broadcaster.StartAsync CancellationToken.None
             do! waitFor (fun () -> Option.isSome bus.MatchHandler)
 
-            let handler = Option.get bus.MatchHandler
+            let handler =
+                Expect.wantSome bus.MatchHandler "The broadcaster should subscribe to matches"
+
             do! Async.StartAsTask (handler ("g1", "w1", "b1"))
 
             Expect.equal

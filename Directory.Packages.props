@@ -1,0 +1,32 @@
+<Project>
+  <!-- Every package version lives here. Project files name packages without versions. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The FSharp.Core that ships with the SDK in global.json. -->
+    <PackageVersion Include="FSharp.Core" Version="10.1.300" />
+    <PackageVersion Include="Falco" Version="5.2.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
+    <PackageVersion Include="Npgsql.FSharp" Version="8.0.0" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
+  </ItemGroup>
+  <ItemGroup Label="Tests">
+    <PackageVersion Include="Expecto" Version="10.2.3" />
+    <PackageVersion Include="Expecto.FsCheck" Version="10.2.3" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.17.0" />
+    <PackageVersion Include="YoloDev.Expecto.TestSdk" Version="0.15.6" />
+  </ItemGroup>
+  <!--
+    F# analyzers, run by ./eclair analyze. Eclair.fsproj downloads them with PackageDownload, so
+    they never join a project's dependency graph. Versions must be exact, in brackets. Each package
+    must be built against the FSharp.Analyzers.SDK that the fsharp-analyzers tool in
+    .config/dotnet-tools.json ships, so bump them together.
+  -->
+  <ItemGroup>
+    <FSharpAnalyzer Include="Ionide.Analyzers" Version="[0.22.0]" />
+  </ItemGroup>
+</Project>

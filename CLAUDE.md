@@ -6,11 +6,15 @@ Active work: the Bolero/CLI migration in `docs/design/bolero-migration.md`. Read
 
 React is deleted, and the Bolero client arrives in P10, so there is no browser UI until then. Check gameplay with `tests/WebApi.Tests` or by calling the HTTP API on :5000.
 
-Hooks in `.claude/hooks` format F# after each edit, check layer rules on `.fsproj` edits, and run the build plus backend unit tests before you finish. Don't run those yourself; fix what the hooks report.
+Hooks in `.claude/hooks` format F# after each edit, check layer rules on `.fsproj` edits, and run the build, backend unit tests and `./eclair analyze` before you finish. Don't run those yourself; fix what the hooks report.
 
 ## Rules
 
-- Warnings are errors, including NuGet audit (NU1903). A newly published advisory can break `main` overnight; fix it by bumping the package, not by suppressing the warning.
+- Warnings are errors, including NuGet audit (NU1903) and the opt-in warnings listed in `Directory.Build.props`. A newly published advisory can break `main` overnight; fix it by bumping the package, not by suppressing the warning.
+- Don't silence a warning or analyzer finding with `#nowarn` or an ignore comment unless the owner agrees. Fix the code.
+- Package versions live only in `Directory.Packages.props`. Project files name packages without a version.
+- Commit every `packages.lock.json` that a restore changes. CI restores in locked mode and fails on drift.
+- Analyzer packages must match the FSharp.Analyzers.SDK of the `fsharp-analyzers` tool in `.config/dotnet-tools.json`. Bump the tool and the packages together.
 
 ## Gotchas
 

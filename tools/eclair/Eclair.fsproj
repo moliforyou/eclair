@@ -9,8 +9,14 @@
 
   <ItemGroup>
     <Compile Include="LayerRules.fs" />
+    <Compile Include="Analyzers.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <!-- Downloads the analyzers listed in Directory.Packages.props for ./eclair analyze. -->
+  <ItemGroup>
+    <PackageDownload Include="@(FSharpAnalyzer)" />
   </ItemGroup>
 
 </Project>

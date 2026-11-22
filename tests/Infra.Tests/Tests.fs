@@ -1,7 +1,5 @@
 module Tests
 
-#nowarn "0044"
-
 open Expecto
 open Testcontainers.PostgreSql
 open Testcontainers.Redis
@@ -22,13 +20,13 @@ let expectError =
 
 let pgContainer =
     lazy
-        (let c = PostgreSqlBuilder().WithImage("postgres:16-alpine").Build ()
+        (let c = PostgreSqlBuilder("postgres:16-alpine").Build ()
          c.StartAsync().GetAwaiter().GetResult ()
          c)
 
 let redisContainer =
     lazy
-        (let c = RedisBuilder().WithImage("redis:7-alpine").Build ()
+        (let c = RedisBuilder("redis:7-alpine").Build ()
          c.StartAsync().GetAwaiter().GetResult ()
          c)
 
@@ -52,8 +50,7 @@ let tests =
             Expect.isTrue (Result.isOk res1) "create should succeed"
 
             let! loadedOpt = repo.LoadGame (gameId)
-            Expect.isTrue (Option.isSome loadedOpt) "load game should return Some record"
-            let loaded = Option.get loadedOpt
+            let loaded = Expect.wantSome loadedOpt "load game should return Some record"
             Expect.equal loaded.WhitePlayerId "w1" "WhitePlayerId should match"
             Expect.equal loaded.BlackPlayerId "b1" "BlackPlayerId should match"
             Expect.equal loaded.State.Version 0 "Version should match"

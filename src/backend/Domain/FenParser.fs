@@ -38,14 +38,6 @@ module FenParser =
         if ranks.Length <> 8 then
             Error $"Expected 8 ranks in piece placement, got {ranks.Length}"
         else
-            let folder (board: Board, file: int) (c: char) =
-                if System.Char.IsDigit c then
-                    (board, file + (int c - int '0'))
-                else
-                    match charToPiece c with
-                    | Some piece -> (Map.add (file, 0) piece board, file + 1)
-                    | None -> (board, file)
-
             let mutable board = Map.empty
             let mutable error = None
 
@@ -201,7 +193,7 @@ module FenParser =
                 + (if state.CastlingRights.BlackKingSide then "k" else "")
                 + (if state.CastlingRights.BlackQueenSide then "q" else "")
 
-            if s = "" then "-" else s
+            if System.String.IsNullOrEmpty s then "-" else s
 
         let epTarget =
             match state.EnPassantTarget with

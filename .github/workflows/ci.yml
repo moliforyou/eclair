@@ -26,9 +26,14 @@ jobs:
         run: ./eclair layers
 
       - name: Build
+        id: build
         run: ./eclair build
+
+      - name: Analyze
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ./eclair analyze
 
       # Infra.Tests uses Testcontainers; Docker is preinstalled on ubuntu runners
       - name: Test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./eclair test
-

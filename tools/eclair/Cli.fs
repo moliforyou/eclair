@@ -10,12 +10,14 @@ type Command =
     | Test of TestScope
     | Format of check: bool
     | Lint
+    | Analyze
     | Layers of projects: string list
     | EnvUp
     | EnvDown
     | Run
     | Setup
 
+[<NoEquality; NoComparison>]
 type Entry = {
     Name: string
     Usage: string
@@ -84,6 +86,16 @@ let entries = [
         Parse = noArgs Lint
     }
     {
+        Name = "analyze"
+        Usage = "analyze"
+        Summary = "Build, then run the F# analyzers over every project."
+        Details =
+            $"Runs fsharp-analyzers on every .fsproj under src, tools and tests, with the FSharpAnalyzer packages listed in {Analyzers.versionsFile}. Any warning or error fails the run, and so does a project that does not type check. Hints are not enforced."
+        Options = []
+        Example = "./eclair analyze"
+        Parse = noArgs Analyze
+    }
+    {
         Name = "layers"
         Usage = "layers [fsproj...]"
         Summary = "Check project references and packages against the layer rules."
@@ -138,6 +150,7 @@ let globalOptions = [
     "--help, -h", "Show help for eclair or for one command."
 ]
 
+[<NoEquality; NoComparison>]
 type Request =
     | Execute of Command * json: bool
     | Help of Entry option
