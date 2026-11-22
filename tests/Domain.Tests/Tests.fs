@@ -48,6 +48,11 @@ let fenTests =
             Expect.equal "" (Map.find (0, 1) state.Board) { Color = White; Type = Pawn }
         }
 
+        test "newGame is the starting position" {
+            let state = FenParser.parse FenParser.startingFen |> unwrap
+            Expect.equal "" (Game.newGame ()) state
+        }
+
         test "round-trip starting position" {
             let state = FenParser.parse FenParser.startingFen |> unwrap
             let fen = FenParser.toFen state

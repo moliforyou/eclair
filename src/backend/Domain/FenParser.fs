@@ -38,30 +38,25 @@ module FenParser =
         if ranks.Length <> 8 then
             Error $"Expected 8 ranks in piece placement, got {ranks.Length}"
         else
-            let mutable board = Map.empty
-            let mutable error = None
+            let rec parseRank boardRank file (chars: char list) (board: Board) =
+                match chars with
+                | [] when file = 8 -> Ok board
+                | [] -> Error $"Rank {boardRank + 1} has {file} files instead of 8"
+                | c :: rest when System.Char.IsDigit c -> parseRank boardRank (file + (int c - int '0')) rest board
+                | c :: rest ->
+                    match charToPiece c with
+                    | Some piece -> parseRank boardRank (file + 1) rest (Map.add (file, boardRank) piece board)
+                    | None -> Error $"Unknown piece character: '{c}'"
 
-            for rankIdx in 0..7 do
-                let boardRank = 7 - rankIdx
-                let rankStr = ranks.[rankIdx]
-                let mutable file = 0
-
-                for c in rankStr do
-                    if System.Char.IsDigit c then
-                        file <- file + (int c - int '0')
-                    else
-                        match charToPiece c with
-                        | Some piece ->
-                            board <- Map.add (file, boardRank) piece board
-                            file <- file + 1
-                        | None -> error <- Some $"Unknown piece character: '{c}'"
-
-                if file <> 8 && error.IsNone then
-                    error <- Some $"Rank {boardRank + 1} has {file} files instead of 8"
-
-            match error with
-            | Some msg -> Error msg
-            | None -> Ok board
+            ranks
+            |> Array.toList
+            |> List.indexed
+            |> List.fold
+                (fun board (rankIdx, rankStr) ->
+                    board
+                    |> Result.bind (parseRank (7 - rankIdx) 0 (List.ofArray (rankStr.ToCharArray ())))
+                )
+                (Ok Map.empty)
 
     let private parseActiveColor (s: string) : Result<Color, string> =
         match s with
@@ -161,23 +156,20 @@ module FenParser =
         let placement =
             [
                 for rank in 7..-1..0 do
-                    let mutable empty = 0
-                    let mutable rankStr = ""
+                    let flush empty text =
+                        if empty > 0 then text + string empty else text
 
-                    for file in 0..7 do
-                        match Map.tryFind (file, rank) state.Board with
-                        | Some piece ->
-                            if empty > 0 then
-                                rankStr <- rankStr + string empty
-                                empty <- 0
+                    let empty, text =
+                        [ 0..7 ]
+                        |> List.fold
+                            (fun (empty, text) file ->
+                                match Map.tryFind (file, rank) state.Board with
+                                | Some piece -> 0, flush empty text + string (pieceToChar piece)
+                                | None -> empty + 1, text
+                            )
+                            (0, "")
 
-                            rankStr <- rankStr + string (pieceToChar piece)
-                        | None -> empty <- empty + 1
-
-                    if empty > 0 then
-                        rankStr <- rankStr + string empty
-
-                    yield rankStr
+                    yield flush empty text
             ]
             |> String.concat "/"
 

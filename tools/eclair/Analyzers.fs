@@ -7,6 +7,9 @@ open System.Xml.Linq
 
 let versionsFile = "Directory.Packages.props"
 
+/// Where the repo's own analyzers in tools/analyzers are built.
+let localAnalyzers = "tools/analyzers/bin"
+
 let private attribute name (element: XElement) =
     element.Attribute (XName.Get name) |> Option.ofObj |> Option.map _.Value
 
@@ -30,6 +33,7 @@ let declared (propsXml: string) =
 type Problem =
     | NoAnalyzers
     | NotRestored of package: string * path: string
+    | NotBuilt of path: string
 
 let packagesRoot () =
     let home =
@@ -54,6 +58,7 @@ let path root analyzer =
 let describe problem =
     match problem with
     | NoAnalyzers -> $"analyze: {versionsFile} lists no FSharpAnalyzer items, so there is nothing to run."
+    | NotBuilt dir -> $"analyze: the repo's own analyzers are not built at {dir}. Run ./eclair build first."
     | NotRestored (package, dir) ->
         $"analyze: {package} is not downloaded to {dir}. Run ./eclair build first, which restores it."
 

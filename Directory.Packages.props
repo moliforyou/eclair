@@ -11,6 +11,10 @@
     <PackageVersion Include="Npgsql.FSharp" Version="8.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
   </ItemGroup>
+  <ItemGroup Label="Our own analyzers in tools/analyzers">
+    <!-- Must match the FSharp.Analyzers.SDK that the fsharp-analyzers tool ships. -->
+    <PackageVersion Include="FSharp.Analyzers.SDK" Version="0.43.0" />
+  </ItemGroup>
   <ItemGroup Label="Tests">
     <PackageVersion Include="Expecto" Version="10.2.3" />
     <PackageVersion Include="Expecto.FsCheck" Version="10.2.3" />

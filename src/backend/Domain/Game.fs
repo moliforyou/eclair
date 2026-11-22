@@ -41,26 +41,19 @@ module Game =
         board
         |> Map.tryFindKey (fun _ piece -> piece.Color = color && piece.Type = King)
 
-    let private slidingMoves (board: Board) (color: Color) (from: Position) (directions: (int * int) list) : Move list = [
-        for (df, dr) in directions do
-            let mutable file, rank = from
-            let mutable blocked = false
+    let private slidingMoves (board: Board) (color: Color) (from: Position) (directions: (int * int) list) : Move list =
+        let rec ray (file, rank) (df, dr) =
+            let target = (file + df, rank + dr)
 
-            while not blocked do
-                file <- file + df
-                rank <- rank + dr
-                let target = (file, rank)
+            if not (isOnBoard target) then
+                []
+            else
+                match pieceAt board target with
+                | None -> Normal (from, target) :: ray target (df, dr)
+                | Some piece when piece.Color <> color -> [ Capture (from, target, piece) ]
+                | Some _ -> []
 
-                if not (isOnBoard target) then
-                    blocked <- true
-                else
-                    match pieceAt board target with
-                    | None -> yield Normal (from, target)
-                    | Some piece when piece.Color <> color ->
-                        yield Capture (from, target, piece)
-                        blocked <- true
-                    | Some _ -> blocked <- true
-    ]
+        directions |> List.collect (ray from)
 
     let private pawnMoves (board: Board) (color: Color) (from: Position) (epTarget: Position option) : Move list =
         let (file, rank) = from
@@ -546,6 +539,32 @@ module Game =
         resolveMove state request |> Result.bind (applyMove state)
 
     let newGame () : GameState =
-        match FenParser.parse FenParser.startingFen with
-        | Ok state -> state
-        | Error msg -> failwith $"Bug: could not parse starting FEN: {msg}"
+        let backRank = [ Rook; Knight; Bishop; Queen; King; Bishop; Knight; Rook ]
+        let pawns = List.replicate 8 Pawn
+
+        let rank color index types =
+            types
+            |> List.mapi (fun file pieceType -> (file, index), { Color = color; Type = pieceType })
+
+        {
+            Board =
+                Map.ofList (
+                    rank White 0 backRank
+                    @ rank White 1 pawns
+                    @ rank Black 6 pawns
+                    @ rank Black 7 backRank
+                )
+            ActiveColor = White
+            CastlingRights = {
+                WhiteKingSide = true
+                WhiteQueenSide = true
+                BlackKingSide = true
+                BlackQueenSide = true
+            }
+            EnPassantTarget = None
+            HalfMoveClock = 0
+            FullMoveNumber = 1
+            History = []
+            Status = InProgress
+            Version = 0
+        }
