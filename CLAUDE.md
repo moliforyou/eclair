@@ -14,6 +14,7 @@ Hooks in `.claude/hooks` format F# after each edit, check layer rules on `.fspro
 - Don't silence a warning or analyzer finding with `#nowarn` or an ignore comment unless the owner agrees. Fix the code.
 - Package versions live only in `Directory.Packages.props`. Project files name packages without a version.
 - Commit every `packages.lock.json` that a restore changes. CI restores in locked mode and fails on drift.
+- Domain stays pure: no `mutable` and nothing that throws (`failwith`, `raise`, `invalidArg`...). The repo's own analyzer in `tools/analyzers` enforces this as ECLAIR-001 and ECLAIR-002. Use recursion or a fold, and return `Result` or `Option`.
 - Analyzer packages must match the FSharp.Analyzers.SDK of the `fsharp-analyzers` tool in `.config/dotnet-tools.json`. Bump the tool and the packages together.
 
 ## Gotchas

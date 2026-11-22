@@ -19,9 +19,7 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
-      # BOOTSTRAP (temporary)
       - name: Check formatting
-        continue-on-error: true
         run: ./eclair format && git diff --exit-code -- src tests tools
 
       - name: Check layer rules
@@ -40,9 +38,3 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./eclair test
 
-      # BOOTSTRAP (temporary)
-      - name: Print bootstrap files
-        if: ${{ always() }}
-        run: |
-          echo "=== PATCH"; git diff -- src tests tools; echo "=== END PATCH"
-          for f in $(git ls-files --others --exclude-standard | grep packages.lock.json); do echo "=== FILE $f"; cat "$f"; echo "=== END FILE"; done
