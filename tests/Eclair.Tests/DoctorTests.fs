@@ -10,6 +10,7 @@ let runner =
     "dotnet /repo/src/backend/ChessPlatform.Runner/bin/Debug/net10.0/ChessPlatform.Runner.dll"
 
 let healthy = {
+    RunnerDir = "/repo/src/backend/ChessPlatform.Runner/"
     DockerUp = true
     Services = Map [ "postgres", "healthy"; "redis", "healthy" ]
     Port5000 = Listening (4242, runner)
@@ -95,6 +96,21 @@ let tests =
 
             Expect.stringContains problem "pid 777 (python3 -m http.server 5000)" "names the owner"
             Expect.stringContains fix "kill 777" "says how to free the port"
+        }
+
+        test "a Runner from another checkout does not count as ours" {
+            let facts = {
+                healthy with
+                    Port5000 =
+                        Listening (
+                            5151,
+                            "dotnet /repo-p4/src/backend/ChessPlatform.Runner/bin/Debug/net10.0/ChessPlatform.Runner.dll"
+                        )
+            }
+
+            let problem, fix = failure "port5000" facts
+            Expect.stringContains problem "another checkout" "problem"
+            Expect.stringContains fix "kill 5151" "fix"
         }
 
         test "the AirPlay Receiver on port 5000 is called out" {

@@ -336,7 +336,7 @@ let private analyze env output =
 
         if not (File.Exists report) then
             log.WriteLine
-                "analyze: fsharp-analyzers wrote no report, so nothing was checked. Its output above says why."
+                "analyze: fsharp-analyzers wrote no report, so nothing was checked. If the output above says to run dotnet tool restore, run ./eclair setup. Otherwise it says why."
 
             if exitCode = 0 then 1 else exitCode
         else
@@ -399,6 +399,10 @@ let private analyzeStep env = {
     Run = analyze env
 }
 
+let private runnerDir env =
+    Path.Combine (env.Root, "src/backend/ChessPlatform.Runner")
+    + string Path.DirectorySeparatorChar
+
 let private runnerDll env configuration =
     Path.Combine (env.Root, "src/backend/ChessPlatform.Runner/bin", configuration, "net10.0/ChessPlatform.Runner.dll")
 
@@ -444,7 +448,7 @@ let private portOwner env =
         |> List.ofSeq
 
     listeners
-    |> List.tryFind (snd >> Doctor.isRunner)
+    |> List.tryFind (snd >> Doctor.isRunner (runnerDir env))
     |> Option.orElse (List.tryHead listeners)
     |> Option.map Doctor.Listening
     |> Option.defaultValue Doctor.Free
@@ -489,10 +493,11 @@ let private facts env : Doctor.Facts =
 
     let runnerStartedAt =
         match port5000 with
-        | Doctor.Listening (pid, command) when Doctor.isRunner command -> startedAt pid
+        | Doctor.Listening (pid, command) when Doctor.isRunner (runnerDir env) command -> startedAt pid
         | _ -> None
 
     {
+        RunnerDir = runnerDir env
         DockerUp = dockerUp
         Services = if dockerUp then composeServices env else Map.empty
         Port5000 = port5000
@@ -664,7 +669,7 @@ let private startRunner env json (command: string) release =
 
     let owner = portOwner env
 
-    match owner, Doctor.port owner with
+    match owner, Doctor.port (runnerDir env) owner with
     | Doctor.Listening (pid, _), Doctor.Pass ->
         say
             $"the Runner is already running on http://localhost:5000 (pid {pid}). To restart it, kill {pid}, then run ./eclair run."

@@ -7,6 +7,7 @@ type PortOwner =
     | Listening of pid: int * command: string
 
 type Facts = {
+    RunnerDir: string
     DockerUp: bool
     Services: Map<string, string>
     Port5000: PortOwner
@@ -21,7 +22,7 @@ type Status =
 
 type Check = { Name: string; Status: Status }
 
-let isRunner (command: string) = command.Contains "ChessPlatform.Runner"
+let isRunner (runnerDir: string) (command: string) = command.Contains runnerDir
 
 let private docker up =
     if up then
@@ -43,10 +44,15 @@ let private service facts name =
                 $"Read docker compose logs {name}, then run ./eclair env down and ./eclair env up."
             )
 
-let port owner =
+let port runnerDir owner =
     match owner with
     | Free -> Fail ("nothing listens on port 5000", "Run ./eclair run.")
-    | Listening (_, command) when isRunner command -> Pass
+    | Listening (_, command) when isRunner runnerDir command -> Pass
+    | Listening (pid, command) when command.Contains "ChessPlatform.Runner" ->
+        Fail (
+            $"port 5000 is taken by pid {pid} ({command}), a Runner from another checkout",
+            $"Stop it (kill {pid}), then run ./eclair run here."
+        )
     | Listening (pid, command) when command.Contains "ControlCenter" ->
         Fail (
             $"port 5000 is taken by pid {pid} ({command}), which is the macOS AirPlay Receiver",
@@ -61,7 +67,7 @@ let port owner =
 let private build facts =
     match facts.RunnerBuiltAt, facts.Port5000 with
     | None, _ -> Fail ("the Runner is not built", "Run ./eclair run, which builds it and starts it.")
-    | Some built, Listening (pid, command) when built < facts.SourcesChangedAt && isRunner command ->
+    | Some built, Listening (pid, command) when built < facts.SourcesChangedAt && isRunner facts.RunnerDir command ->
         Fail (
             "the running Runner is older than its sources",
             $"Restart it: kill {pid}, then run ./eclair run, which rebuilds it."
@@ -85,7 +91,7 @@ let classify facts = [
     }
     {
         Name = "port5000"
-        Status = port facts.Port5000
+        Status = port facts.RunnerDir facts.Port5000
     }
     { Name = "build"; Status = build facts }
 ]
