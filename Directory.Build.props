@@ -20,6 +20,9 @@
     <!-- Central package management drops the SDK's implicit FSharp.Core, so reference it here,
          pinned in Directory.Packages.props. -->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <!-- The SDK's library-packs copy of FSharp.Core has a different hash from nuget.org's,
+         which breaks the lock files (NU1403) on any machine that restored from it. -->
+    <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
