@@ -1,6 +1,6 @@
 # eclair
 
-`./eclair --help` lists every command. `./eclair env up` starts Postgres + Redis; `./eclair run` runs `ChessPlatform.Runner`, which hosts WebApi **and** BackgroundWorkers. Running WebApi alone gives no matchmaking or computer opponent.
+`./eclair --help` lists every command. `./eclair env up` starts Postgres + Redis. `./eclair run` builds `ChessPlatform.Runner`, which hosts WebApi **and** BackgroundWorkers, starts it in the background with its log in `.eclair/runner.log`, and returns once it serves :5000. `./eclair env doctor` names whatever is missing and the command that fixes it, and `./eclair db reset` deletes every game. Running WebApi alone gives no matchmaking or computer opponent.
 
 Active work: the Bolero/CLI migration in `docs/design/bolero-migration.md`. Read it before starting any part of it. `docs/design/bolero-migration-plan.md` is the checklist, one section per PR.
 

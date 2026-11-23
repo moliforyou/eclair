@@ -13,8 +13,10 @@ type Command =
     | Analyze
     | Layers of projects: string list
     | EnvUp
-    | EnvDown
-    | Run
+    | EnvDown of volumes: bool * dryRun: bool
+    | EnvDoctor
+    | Run of release: bool
+    | DbReset of dryRun: bool
     | Setup
 
 [<NoEquality; NoComparison>]
@@ -112,27 +114,52 @@ let entries = [
     }
     {
         Name = "env"
-        Usage = "env up|down"
-        Summary = "Start or stop Postgres and Redis."
+        Usage = "env up | down [--volumes] [--dry-run] | doctor"
+        Summary = "Start, stop or check Postgres, Redis and the Runner."
         Details =
-            "up runs docker compose up -d --wait, which returns once both are healthy. down runs docker compose down."
-        Options = []
-        Example = "./eclair env up"
+            "up runs docker compose up -d --wait, which returns once both are healthy. down runs docker compose down. doctor checks that Docker is running, Postgres and Redis are healthy, the Runner owns port 5000, and the Runner build is newer than its sources. It prints each failure with the command that fixes it, and exits 1 if any check fails."
+        Options = [
+            "--volumes", "down: also delete the volumes, which deletes every game in Postgres."
+            "--dry-run", "down: print what would be stopped and removed, and change nothing."
+        ]
+        Example = "./eclair env doctor --json"
         Parse =
             function
             | [ "up" ] -> Some EnvUp
-            | [ "down" ] -> Some EnvDown
+            | "down" :: flags when flags |> List.forall (fun flag -> flag = "--volumes" || flag = "--dry-run") ->
+                Some (EnvDown (List.contains "--volumes" flags, List.contains "--dry-run" flags))
+            | [ "doctor" ] -> Some EnvDoctor
             | _ -> None
     }
     {
         Name = "run"
-        Usage = "run"
-        Summary = "Run the backend (WebApi and BackgroundWorkers) on :5000 in the foreground."
+        Usage = "run [--release]"
+        Summary = "Start the backend (WebApi and BackgroundWorkers) in the background and wait until it serves :5000."
         Details =
-            "Runs dotnet run --project src/backend/ChessPlatform.Runner. It needs Postgres and Redis, so run ./eclair env up first. Stop it with Ctrl-C."
-        Options = []
+            "Builds src/backend/ChessPlatform.Runner, starts it detached with its output in .eclair/runner.log and its pid in .eclair/runner.pid, then waits until GET http://localhost:5000/api/games/__probe answers 404. If the Runner already owns port 5000, says so and exits 0. If another process owns it, names that process and exits 1. If the Runner exits, answers anything but 404, or takes over 30 s, eclair stops it, prints the end of its log and exits 1. It needs Postgres and Redis, so run ./eclair env up first. Stop it with kill $(cat .eclair/runner.pid)."
+        Options = [ "--release", "Build and run the Release configuration instead of Debug." ]
         Example = "./eclair run"
-        Parse = noArgs Run
+        Parse =
+            function
+            | [] -> Some (Run false)
+            | [ "--release" ] -> Some (Run true)
+            | _ -> None
+    }
+    {
+        Name = "db"
+        Usage = "db reset [--dry-run]"
+        Summary = "Delete every game: truncate the Postgres Games table and flush Redis."
+        Details =
+            "Runs TRUNCATE games in the chess-postgres container and FLUSHALL in the chess-redis container, through docker exec, then prints how many games and keys it deleted. Both containers must be running (./eclair env up). The Runner can stay up."
+        Options = [
+            "--dry-run", "Print how many games and Redis keys reset would delete, and change nothing."
+        ]
+        Example = "./eclair db reset --dry-run"
+        Parse =
+            function
+            | [ "reset" ] -> Some (DbReset false)
+            | [ "reset"; "--dry-run" ] -> Some (DbReset true)
+            | _ -> None
     }
     {
         Name = "setup"

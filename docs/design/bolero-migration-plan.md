@@ -105,16 +105,16 @@ These are probes on the owner's Mac, 2026-11-20. Each PR remeasures its own base
 
 ## P4: `eclair env`, `run` and `db`
 
-- [ ] Depends on: P3.
-- [ ] Files: `tools/eclair/**`, `tests/Eclair.Tests/**`, `CLAUDE.md`.
-- [ ] Change: add `env up`, `env down [--volumes --dry-run]`, `env doctor`, `run [--release]` and `db reset [--dry-run]`.
-  - `doctor` checks five things: Docker is up, Postgres and Redis are healthy, port 5000 is owned by our Runner process, and the Runner build is newer than its sources.
-  - `run` starts the Runner in the background, writes a log file, and waits until `GET /api/games/__probe` returns 404.
+- [x] Depends on: P3.
+- [x] Files: `tools/eclair/**`, `tests/Eclair.Tests/**`, `CLAUDE.md`. Also `.gitignore`, which ignores `.eclair/`, where `run` keeps the Runner's log and pid.
+- [x] Change: add `env up`, `env down [--volumes --dry-run]`, `env doctor`, `run [--release]` and `db reset [--dry-run]`.
+  - `doctor` checks five things: Docker is up, Postgres and Redis are healthy, port 5000 is owned by our Runner process, and the Runner build is newer than its sources. Deviation: the sources are the `.fs`, `.fsi` and `.fsproj` files under `src/backend`, not `appsettings*.json`. Editing an appsettings file does not rebuild the Runner DLL, so the check would fail with no way to clear it, and the Runner reads the repo-root `appsettings.json` anyway. A Runner that is already running counts as built no later than its start time, so a Runner started before the last rebuild reads as stale.
+  - `run` starts the Runner in the background, writes a log file, and waits until `GET /api/games/__probe` returns 404. It starts the built DLL from the repo root, so the content root and `appsettings.json` are the ones `dotnet run` used. If the Runner exits, answers anything but 404, or takes over 30 s, `run` stops it and prints the end of its log.
   - `db reset` truncates `Games` and flushes Redis.
-- [ ] Result: one command takes a clean machine to a usable app. `doctor --json` explains each failure and says what to do about it.
-- [ ] Unit: `Eclair.Tests` covers how `doctor` classifies faked probe results.
-- [ ] Live: run `env down --volumes`, then `env up`, `run` and `doctor`. All checks pass. Kill the Runner, and `doctor` reports that port 5000 is free and names `./eclair run`. Start an unrelated listener on port 5000, and `doctor` reports a foreign owner. `db reset --dry-run` changes no rows.
-- [ ] Perf: metric is the time from `run` until the app is usable. Measure the trunk baseline first, as `make run-api` until the first 404. Fail if `run` is more than 2 s slower.
+- [x] Result: one command takes a clean machine to a usable app. `doctor --json` explains each failure and says what to do about it.
+- [x] Unit: `Eclair.Tests` covers how `doctor` classifies faked probe results.
+- [x] Live: run `env down --volumes`, then `env up`, `run` and `doctor`. All checks pass. Kill the Runner, and `doctor` reports that port 5000 is free and names `./eclair run`. Start an unrelated listener on port 5000, and `doctor` reports a foreign owner. `db reset --dry-run` changes no rows.
+- [x] Perf: metric is the time from `run` until the app is usable. Measure the trunk baseline first, as `make run-api` until the first 404. Fail if `run` is more than 2 s slower. The Makefile is gone since P3, so the baseline is P3's `./eclair run`, a passthrough of the same `dotnet run`. Baseline: 1.20 s median of 5 runs (1.16 to 1.65 s). Interleaved with this `run`, 5 runs each: 1.16 s before, 1.03 s after (1.00 to 1.04 s). Most of it is the no-op `dotnet build` (0.65 s). Runner startup to the first 404 takes 0.27 s, of which schema creation is about 0.04 s.
 
 ## P5: `eclair game`, against today's API
 

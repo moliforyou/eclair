@@ -4,7 +4,9 @@ open System
 open System.ComponentModel
 open System.Diagnostics
 open System.IO
+open System.Net.Http
 open System.Text.Json
+open System.Threading
 open System.Xml
 open Cli
 open LayerRules
@@ -68,6 +70,27 @@ let private runProcess env program (args: string list) output =
     with :? Win32Exception as error ->
         env.Err.WriteLine $"eclair: could not start {program}: {error.Message}. Install it and put it on PATH."
         127
+
+let private capture env program (args: string list) =
+    let info =
+        ProcessStartInfo (
+            program,
+            WorkingDirectory = env.Root,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        )
+
+    args |> List.iter info.ArgumentList.Add
+
+    try
+        use child = nonNull (Process.Start info)
+        let err = child.StandardError.ReadToEndAsync ()
+        let out = child.StandardOutput.ReadToEnd ()
+        child.WaitForExit ()
+        child.ExitCode, out, err.Result
+    with :? Win32Exception as error ->
+        127, "", $"could not start {program}: {error.Message}. Install it and put it on PATH."
 
 let private step env next (commandLine: string) =
     let words = commandLine.Split ' '
@@ -313,7 +336,7 @@ let private analyze env output =
 
         if not (File.Exists report) then
             log.WriteLine
-                "analyze: fsharp-analyzers wrote no report, so nothing was checked. Its output above says why."
+                "analyze: fsharp-analyzers wrote no report, so nothing was checked. If the output above says to run dotnet tool restore, run ./eclair setup. Otherwise it says why."
 
             if exitCode = 0 then 1 else exitCode
         else
@@ -376,6 +399,420 @@ let private analyzeStep env = {
     Run = analyze env
 }
 
+let private runnerDir env =
+    Path.Combine (env.Root, "src/backend/ChessPlatform.Runner")
+    + string Path.DirectorySeparatorChar
+
+let private runnerDll env configuration =
+    Path.Combine (env.Root, "src/backend/ChessPlatform.Runner/bin", configuration, "net10.0/ChessPlatform.Runner.dll")
+
+let private serviceHealth (row: JsonElement) =
+    let text (name: string) =
+        match row.TryGetProperty name with
+        | true, value when value.ValueKind = JsonValueKind.String -> nonNull (value.GetString ())
+        | _ -> ""
+
+    let health = text "Health"
+    text "Service", (if health.Length = 0 then text "State" else health)
+
+let private composeServices env =
+    match capture env "docker" [ "compose"; "ps"; "--format"; "json" ] with
+    | 0, out, _ when out.TrimStart().StartsWith '[' ->
+        use rows = JsonDocument.Parse out
+        rows.RootElement.EnumerateArray () |> Seq.map serviceHealth |> Map.ofSeq
+    | 0, out, _ ->
+        out.Split ('\n', StringSplitOptions.RemoveEmptyEntries)
+        |> Seq.map (fun line ->
+            use row = JsonDocument.Parse line
+            serviceHealth row.RootElement
+        )
+        |> Map.ofSeq
+    | _ -> Map.empty
+
+let private portOwner env =
+    let _, out, _ = capture env "lsof" [ "-nP"; "-iTCP:5000"; "-sTCP:LISTEN"; "-Fp" ]
+
+    let listeners =
+        out.Split '\n'
+        |> Seq.filter _.StartsWith('p')
+        |> Seq.choose (fun line ->
+            match Int32.TryParse line[1..] with
+            | true, pid -> Some pid
+            | _ -> None
+        )
+        |> Seq.distinct
+        |> Seq.map (fun pid ->
+            let _, command, _ = capture env "ps" [ "-o"; "command="; "-p"; string pid ]
+            pid, command.Trim ()
+        )
+        |> List.ofSeq
+
+    listeners
+    |> List.tryFind (snd >> Doctor.isRunner (runnerDir env))
+    |> Option.orElse (List.tryHead listeners)
+    |> Option.map Doctor.Listening
+    |> Option.defaultValue Doctor.Free
+
+let rec private newestSource dir =
+    let files =
+        Directory.GetFiles dir
+        |> Seq.filter (fun file -> file.EndsWith ".fs" || file.EndsWith ".fsi" || file.EndsWith ".fsproj")
+        |> Seq.map File.GetLastWriteTimeUtc
+
+    let subdirs =
+        Directory.GetDirectories dir
+        |> Seq.filter (fun sub -> Path.GetFileName sub <> "bin" && Path.GetFileName sub <> "obj")
+        |> Seq.map newestSource
+
+    Seq.append files subdirs |> Seq.fold max DateTime.MinValue
+
+let private startedAt pid =
+    try
+        use runner = Process.GetProcessById pid
+        Some (runner.StartTime.ToUniversalTime ())
+    with
+    | :? ArgumentException
+    | :? InvalidOperationException -> None
+
+let private facts env : Doctor.Facts =
+    let dockerUp =
+        let exitCode, _, _ =
+            capture env "docker" [ "info"; "--format"; "{{.ServerVersion}}" ]
+
+        exitCode = 0
+
+    let port5000 = portOwner env
+
+    let built =
+        [ "Debug"; "Release" ]
+        |> List.map (runnerDll env)
+        |> List.filter File.Exists
+        |> List.map File.GetLastWriteTimeUtc
+        |> List.sortDescending
+        |> List.tryHead
+
+    let runnerStartedAt =
+        match port5000 with
+        | Doctor.Listening (pid, command) when Doctor.isRunner (runnerDir env) command -> startedAt pid
+        | _ -> None
+
+    {
+        RunnerDir = runnerDir env
+        DockerUp = dockerUp
+        Services = if dockerUp then composeServices env else Map.empty
+        Port5000 = port5000
+        RunnerBuiltAt = Option.map2 min built runnerStartedAt |> Option.orElse built
+        SourcesChangedAt = newestSource (Path.Combine (env.Root, "src/backend"))
+    }
+
+let doctorReport env json command (checks: Doctor.Check list) =
+    let failed =
+        checks
+        |> List.exists (fun check ->
+            match check.Status with
+            | Doctor.Fail _ -> true
+            | _ -> false
+        )
+
+    let exitCode = if failed then 1 else 0
+
+    let describe (check: Doctor.Check) =
+        match check.Status with
+        | Doctor.Pass -> "pass", None, None
+        | Doctor.Fail (problem, fix) -> "fail", Some problem, Some fix
+        | Doctor.Blocked by -> "blocked", Some $"not checked, because the {by} check failed", None
+
+    if json then
+        env.Out.WriteLine (
+            JsonSerializer.Serialize {|
+                command = command
+                checks = [
+                    for check in checks ->
+                        let status, problem, fix = describe check
+
+                        {|
+                            name = check.Name
+                            status = status
+                            problem = problem
+                            fix = fix
+                        |}
+                ]
+                exitCode = exitCode
+            |}
+        )
+    else
+        for check in checks do
+            match describe check with
+            | status, Some problem, Some fix -> env.Out.WriteLine $"{status, -8}{check.Name, -10}{problem}. {fix}"
+            | status, Some problem, None -> env.Out.WriteLine $"{status, -8}{check.Name, -10}{problem}."
+            | status, _, _ -> env.Out.WriteLine $"{status, -8}{check.Name}"
+
+    exitCode
+
+type private Readiness =
+    | Ready
+    | Exited
+    | Answered of status: int
+    | TimedOut
+
+let private runnerLog = ".eclair/runner.log"
+let private runnerPid = ".eclair/runner.pid"
+
+let private alive pid =
+    try
+        use child = Process.GetProcessById pid
+        not child.HasExited
+    with :? ArgumentException ->
+        false
+
+let private startDetached env dll =
+    Directory.CreateDirectory (Path.Combine (env.Root, ".eclair")) |> ignore
+
+    let exitCode, out, err =
+        capture env "/bin/sh" [
+            "-c"
+            $"set -m; \"$@\" >{runnerLog} 2>&1 </dev/null & echo $!"
+            "sh"
+            "dotnet"
+            dll
+        ]
+
+    match exitCode, Int32.TryParse (out.Trim ()) with
+    | 0, (true, pid) ->
+        File.WriteAllText (Path.Combine (env.Root, runnerPid), string pid)
+        Ok pid
+    | _ -> Error err
+
+let private waitUntilReady pid =
+    use http = new HttpClient (Timeout = TimeSpan.FromSeconds 2.0)
+    let clock = Stopwatch.StartNew ()
+
+    let answer () =
+        try
+            use response =
+                http.GetAsync("http://localhost:5000/api/games/__probe").GetAwaiter().GetResult ()
+
+            Some (int response.StatusCode)
+        with
+        | :? HttpRequestException
+        | :? OperationCanceledException -> None
+
+    let rec poll () =
+        match answer () with
+        | Some 404 -> Ready
+        | Some status -> Answered status
+        | None when not (alive pid) -> Exited
+        | None when clock.Elapsed > TimeSpan.FromSeconds 30.0 -> TimedOut
+        | None ->
+            Thread.Sleep 25
+            poll ()
+
+    poll ()
+
+let private stop env pid =
+    try
+        use child = Process.GetProcessById pid
+        child.Kill ()
+        child.WaitForExit ()
+    with
+    | :? ArgumentException
+    | :? InvalidOperationException -> ()
+
+    File.Delete (Path.Combine (env.Root, runnerPid))
+
+let private logTail env =
+    let path = Path.Combine (env.Root, runnerLog)
+
+    if File.Exists path then
+        let lines = File.ReadAllLines path
+        lines[max 0 (lines.Length - 30) ..] |> List.ofArray
+    else
+        []
+
+let private startRunner env json (command: string) release =
+    let clock = Stopwatch.StartNew ()
+
+    let finish (outcome: Result<int, string * string>) =
+        let failure =
+            match outcome with
+            | Ok _ -> None
+            | Error failure -> Some failure
+
+        if json then
+            env.Out.WriteLine (
+                JsonSerializer.Serialize {|
+                    command = command
+                    pid = Result.toOption outcome
+                    log = runnerLog
+                    problem = Option.map fst failure
+                    fix = Option.map snd failure
+                    durationMs = int64 clock.Elapsed.TotalMilliseconds
+                    exitCode = if failure.IsSome then 1 else 0
+                |}
+            )
+
+        match failure with
+        | Some (problem, fix) ->
+            env.Err.WriteLine $"run: {problem}. {fix}"
+            1
+        | None -> 0
+
+    let say (message: string) =
+        if not json then
+            env.Out.WriteLine $"run: {message}"
+
+    let failWithLog problem fix =
+        for line in logTail env do
+            (if json then env.Err else env.Out).WriteLine line
+
+        finish (Error (problem, $"{fix} The end of {runnerLog} is above."))
+
+    let owner = portOwner env
+
+    match owner, Doctor.port (runnerDir env) owner with
+    | Doctor.Listening (pid, _), Doctor.Pass ->
+        say
+            $"the Runner is already running on http://localhost:5000 (pid {pid}). To restart it, kill {pid}, then run ./eclair run."
+
+        finish (Ok pid)
+    | Doctor.Listening _, Doctor.Fail (problem, fix) -> finish (Error (problem, fix))
+    | _ ->
+        let configuration = if release then "Release" else "Debug"
+
+        let built =
+            runProcess
+                env
+                "dotnet"
+                [
+                    "build"
+                    "src/backend/ChessPlatform.Runner"
+                    "-c"
+                    configuration
+                    "-nologo"
+                    "-v"
+                    "q"
+                ]
+                (if json then Into env.Err else Inherit)
+
+        if built <> 0 then
+            finish (Error ("the Runner does not build", "Fix the errors above, then rerun."))
+        else
+            match startDetached env (runnerDll env configuration) with
+            | Error problem -> finish (Error ($"could not start the Runner: {problem.Trim ()}", "Rerun."))
+            | Ok pid ->
+                match waitUntilReady pid with
+                | Ready ->
+                    say
+                        $"the Runner is up on http://localhost:5000 after {clock.Elapsed.TotalSeconds:F1} s (pid {pid}). Its log is {runnerLog}. Stop it with kill {pid}."
+
+                    finish (Ok pid)
+                | Exited ->
+                    File.Delete (Path.Combine (env.Root, runnerPid))
+
+                    failWithLog
+                        "the Runner exited before it served port 5000"
+                        "It needs Postgres and Redis, so run ./eclair env doctor to see what is missing."
+                | Answered status ->
+                    stop env pid
+
+                    failWithLog
+                        $"the Runner answered {status} instead of 404 on /api/games/__probe, so eclair stopped it"
+                        "Run ./eclair env doctor to check Postgres and Redis."
+                | TimedOut ->
+                    stop env pid
+
+                    failWithLog
+                        "the Runner did not serve port 5000 within 30 s, so eclair stopped it"
+                        "Run ./eclair env doctor."
+
+let private plural count (noun: string) =
+    if count = 1 then $"1 {noun}" else $"{count} {noun}s"
+
+let private dbReset env json (command: string) dryRun =
+    let call what (exitCode, out: string, err: string) =
+        if exitCode = 0 then
+            Ok (out.Trim ())
+        else
+            Error $"{what} failed: {err.Trim ()}"
+
+    let psql sql =
+        capture env "docker" [
+            "exec"
+            "chess-postgres"
+            "psql"
+            "-U"
+            "postgres"
+            "-d"
+            "chess"
+            "-tAq"
+            "-c"
+            sql
+        ]
+        |> call "psql in chess-postgres"
+
+    let redis command =
+        capture env "docker" [ "exec"; "chess-redis"; "redis-cli"; command ]
+        |> call "redis-cli in chess-redis"
+
+    let countGames hasTable =
+        if hasTable then
+            psql "SELECT count(*) FROM games" |> Result.map int
+        else
+            Ok 0
+
+    let clear hasTable =
+        (if hasTable then psql "TRUNCATE games" else Ok "")
+        |> Result.bind (fun _ -> redis "FLUSHALL")
+
+    let outcome =
+        psql "SELECT to_regclass('games') IS NOT NULL"
+        |> Result.map ((=) "t")
+        |> Result.bind (fun hasTable ->
+            countGames hasTable
+            |> Result.bind (fun games -> redis "DBSIZE" |> Result.map (fun keys -> games, int keys))
+            |> Result.bind (fun counts ->
+                if dryRun then
+                    Ok counts
+                else
+                    clear hasTable |> Result.map (fun _ -> counts)
+            )
+        )
+
+    let fix =
+        "Run ./eclair env doctor, and ./eclair env up if Postgres or Redis is down."
+
+    if json then
+        env.Out.WriteLine (
+            JsonSerializer.Serialize {|
+                command = command
+                dryRun = dryRun
+                games = outcome |> Result.toOption |> Option.map fst
+                redisKeys = outcome |> Result.toOption |> Option.map snd
+                problem =
+                    match outcome with
+                    | Error problem -> Some problem
+                    | Ok _ -> None
+                fix = if Result.isError outcome then Some fix else None
+                exitCode = if Result.isOk outcome then 0 else 1
+            |}
+        )
+
+    match outcome with
+    | Ok (games, keys) ->
+        let counts =
+            $"""{plural games "game"} from Postgres and {plural keys "key"} from Redis"""
+
+        if not json then
+            if dryRun then
+                env.Out.WriteLine $"db reset: would delete {counts}. Dry run, so nothing changed."
+            else
+                env.Out.WriteLine $"db reset: deleted {counts}."
+
+        0
+    | Error problem ->
+        env.Err.WriteLine $"db reset: {problem}. {fix}"
+        1
+
 let run env argv =
     match parse argv with
     | Help None ->
@@ -388,8 +825,8 @@ let run env argv =
         env.Err.WriteLine $"eclair: {problem}"
         2
     | Execute (command, json) ->
-        let steps =
-            runPlan env json (argv |> List.filter ((<>) "--json") |> String.concat " ")
+        let name = argv |> List.filter ((<>) "--json") |> String.concat " "
+        let steps = runPlan env json name
 
         let build =
             step env "Fix the errors above, then rerun." "dotnet build ChessPlatform.slnx"
@@ -400,11 +837,6 @@ let run env argv =
         let format =
             step env "Fix the syntax error Fantomas names, then rerun." "dotnet fantomas src tests tools"
 
-        let runner = "dotnet run --project src/backend/ChessPlatform.Runner"
-
-        let runnerNeeds =
-            "The Runner needs Postgres and Redis (./eclair env up) and a free port 5000."
-
         match command with
         | Layers projects -> layers env json projects
         | Build -> steps [ [ build ] ]
@@ -414,8 +846,22 @@ let run env argv =
         | Lint -> steps [ [ formatCheck ]; [ layersStep env ] ]
         | Analyze -> steps [ [ build ]; [ analyzeStep env ] ]
         | EnvUp -> steps [ [ step env "Start Docker, then rerun." "docker compose up -d --wait" ] ]
-        | EnvDown -> steps [ [ step env "Start Docker, then rerun." "docker compose down" ] ]
-        | Run -> steps [ [ step env runnerNeeds runner ] ]
+        | EnvDown (volumes, dryRun) ->
+            let flags =
+                (if dryRun then " --dry-run" else "")
+                + " down"
+                + (if volumes then " -v" else "")
+
+            let exitCode =
+                steps [ [ step env "Start Docker, then rerun." $"docker compose{flags}" ] ]
+
+            if dryRun && exitCode = 0 then
+                env.Err.WriteLine "env down: dry run, so nothing was stopped or removed. Drop --dry-run to do it."
+
+            exitCode
+        | EnvDoctor -> doctorReport env json name (Doctor.classify (facts env))
+        | Run release -> startRunner env json name release
+        | DbReset dryRun -> dbReset env json name dryRun
         | Setup ->
             steps [
                 [ step env "Check network access to NuGet, then rerun." "dotnet tool restore" ]
