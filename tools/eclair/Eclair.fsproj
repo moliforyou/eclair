@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="LayerRules.fs" />
     <Compile Include="Analyzers.fs" />
+    <Compile Include="Doctor.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
