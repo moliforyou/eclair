@@ -464,7 +464,8 @@ let rec private newestSource dir =
 
 let private startedAt pid =
     try
-        Some ((Process.GetProcessById pid).StartTime.ToUniversalTime ())
+        use runner = Process.GetProcessById pid
+        Some (runner.StartTime.ToUniversalTime ())
     with
     | :? ArgumentException
     | :? InvalidOperationException -> None
