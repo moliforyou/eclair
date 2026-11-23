@@ -13,7 +13,8 @@ type Command =
     | Analyze
     | Layers of projects: string list
     | EnvUp
-    | EnvDown
+    | EnvDown of volumes: bool * dryRun: bool
+    | EnvDoctor
     | Run
     | Setup
 
@@ -112,16 +113,21 @@ let entries = [
     }
     {
         Name = "env"
-        Usage = "env up|down"
-        Summary = "Start or stop Postgres and Redis."
+        Usage = "env up | down [--volumes] [--dry-run] | doctor"
+        Summary = "Start, stop or check Postgres, Redis and the Runner."
         Details =
-            "up runs docker compose up -d --wait, which returns once both are healthy. down runs docker compose down."
-        Options = []
-        Example = "./eclair env up"
+            "up runs docker compose up -d --wait, which returns once both are healthy. down runs docker compose down. doctor checks that Docker is running, Postgres and Redis are healthy, the Runner owns port 5000, and the Runner build is newer than its sources. It prints each failure with the command that fixes it, and exits 1 if any check fails."
+        Options = [
+            "--volumes", "down: also delete the volumes, which deletes every game in Postgres."
+            "--dry-run", "down: print what would be stopped and removed, and change nothing."
+        ]
+        Example = "./eclair env doctor --json"
         Parse =
             function
             | [ "up" ] -> Some EnvUp
-            | [ "down" ] -> Some EnvDown
+            | "down" :: flags when flags |> List.forall (fun flag -> flag = "--volumes" || flag = "--dry-run") ->
+                Some (EnvDown (List.contains "--volumes" flags, List.contains "--dry-run" flags))
+            | [ "doctor" ] -> Some EnvDoctor
             | _ -> None
     }
     {

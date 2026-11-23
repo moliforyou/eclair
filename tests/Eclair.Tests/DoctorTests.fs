@@ -141,3 +141,59 @@ let tests =
             Expect.stringContains fix "./eclair run" "says what to run"
         }
     ]
+
+[<Tests>]
+let reportTests =
+    testList "doctor report" [
+        test "--json gives each check's status, problem and fix, and exits 1 on a failure" {
+            use out = new System.IO.StringWriter ()
+
+            let exitCode =
+                Program.doctorReport
+                    { Root = "."; Out = out; Err = out }
+                    true
+                    "env doctor"
+                    (classify {
+                        healthy with
+                            DockerUp = false
+                            Services = Map.empty
+                            Port5000 = Free
+                    })
+
+            use summary = System.Text.Json.JsonDocument.Parse (string out)
+
+            let checks = [
+                for check in summary.RootElement.GetProperty("checks").EnumerateArray () ->
+                    check.GetProperty("name").GetString (), check.GetProperty("status").GetString ()
+            ]
+
+            let port5000 =
+                summary.RootElement.GetProperty("checks").EnumerateArray ()
+                |> Seq.find (fun check -> check.GetProperty("name").GetString () = "port5000")
+
+            Expect.equal exitCode 1 "exit code"
+            Expect.equal (summary.RootElement.GetProperty("exitCode").GetInt32 ()) 1 "exit code in JSON"
+
+            Expect.equal
+                checks
+                [
+                    "docker", "fail"
+                    "postgres", "blocked"
+                    "redis", "blocked"
+                    "port5000", "fail"
+                    "build", "pass"
+                ]
+                "statuses"
+
+            Expect.stringContains (port5000.GetProperty("fix").GetString ()) "./eclair run" "port5000 fix"
+        }
+
+        test "a healthy machine exits 0" {
+            use out = new System.IO.StringWriter ()
+
+            let exitCode =
+                Program.doctorReport { Root = "."; Out = out; Err = out } false "env doctor" (classify healthy)
+
+            Expect.equal exitCode 0 (string out)
+        }
+    ]

@@ -69,6 +69,27 @@ let private runProcess env program (args: string list) output =
         env.Err.WriteLine $"eclair: could not start {program}: {error.Message}. Install it and put it on PATH."
         127
 
+let private capture env program (args: string list) =
+    let info =
+        ProcessStartInfo (
+            program,
+            WorkingDirectory = env.Root,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        )
+
+    args |> List.iter info.ArgumentList.Add
+
+    try
+        use child = nonNull (Process.Start info)
+        let err = child.StandardError.ReadToEndAsync ()
+        let out = child.StandardOutput.ReadToEnd ()
+        child.WaitForExit ()
+        child.ExitCode, out, err.Result
+    with :? Win32Exception as error ->
+        127, "", $"could not start {program}: {error.Message}. Install it and put it on PATH."
+
 let private step env next (commandLine: string) =
     let words = commandLine.Split ' '
 
@@ -376,6 +397,150 @@ let private analyzeStep env = {
     Run = analyze env
 }
 
+let private runnerDll env configuration =
+    Path.Combine (env.Root, "src/backend/ChessPlatform.Runner/bin", configuration, "net10.0/ChessPlatform.Runner.dll")
+
+let private serviceHealth (row: JsonElement) =
+    let text (name: string) =
+        match row.TryGetProperty name with
+        | true, value when value.ValueKind = JsonValueKind.String -> nonNull (value.GetString ())
+        | _ -> ""
+
+    let health = text "Health"
+    text "Service", (if health.Length = 0 then text "State" else health)
+
+let private composeServices env =
+    match capture env "docker" [ "compose"; "ps"; "--format"; "json" ] with
+    | 0, out, _ when out.TrimStart().StartsWith '[' ->
+        use rows = JsonDocument.Parse out
+        rows.RootElement.EnumerateArray () |> Seq.map serviceHealth |> Map.ofSeq
+    | 0, out, _ ->
+        out.Split ('\n', StringSplitOptions.RemoveEmptyEntries)
+        |> Seq.map (fun line ->
+            use row = JsonDocument.Parse line
+            serviceHealth row.RootElement
+        )
+        |> Map.ofSeq
+    | _ -> Map.empty
+
+let private portOwner env =
+    let _, out, _ = capture env "lsof" [ "-nP"; "-iTCP:5000"; "-sTCP:LISTEN"; "-Fp" ]
+
+    let listeners =
+        out.Split '\n'
+        |> Seq.filter _.StartsWith('p')
+        |> Seq.choose (fun line ->
+            match Int32.TryParse line[1..] with
+            | true, pid -> Some pid
+            | _ -> None
+        )
+        |> Seq.distinct
+        |> Seq.map (fun pid ->
+            let _, command, _ = capture env "ps" [ "-o"; "command="; "-p"; string pid ]
+            pid, command.Trim ()
+        )
+        |> List.ofSeq
+
+    listeners
+    |> List.tryFind (snd >> Doctor.isRunner)
+    |> Option.orElse (List.tryHead listeners)
+    |> Option.map Doctor.Listening
+    |> Option.defaultValue Doctor.Free
+
+let rec private newestSource dir =
+    let files =
+        Directory.GetFiles dir
+        |> Seq.filter (fun file -> file.EndsWith ".fs" || file.EndsWith ".fsi" || file.EndsWith ".fsproj")
+        |> Seq.map File.GetLastWriteTimeUtc
+
+    let subdirs =
+        Directory.GetDirectories dir
+        |> Seq.filter (fun sub -> Path.GetFileName sub <> "bin" && Path.GetFileName sub <> "obj")
+        |> Seq.map newestSource
+
+    Seq.append files subdirs |> Seq.fold max DateTime.MinValue
+
+let private startedAt pid =
+    try
+        Some ((Process.GetProcessById pid).StartTime.ToUniversalTime ())
+    with
+    | :? ArgumentException
+    | :? InvalidOperationException -> None
+
+let private facts env : Doctor.Facts =
+    let dockerUp =
+        let exitCode, _, _ =
+            capture env "docker" [ "info"; "--format"; "{{.ServerVersion}}" ]
+
+        exitCode = 0
+
+    let port5000 = portOwner env
+
+    let built =
+        [ "Debug"; "Release" ]
+        |> List.map (runnerDll env)
+        |> List.filter File.Exists
+        |> List.map File.GetLastWriteTimeUtc
+        |> List.sortDescending
+        |> List.tryHead
+
+    let runnerStartedAt =
+        match port5000 with
+        | Doctor.Listening (pid, command) when Doctor.isRunner command -> startedAt pid
+        | _ -> None
+
+    {
+        DockerUp = dockerUp
+        Services = if dockerUp then composeServices env else Map.empty
+        Port5000 = port5000
+        RunnerBuiltAt = Option.map2 min built runnerStartedAt |> Option.orElse built
+        SourcesChangedAt = newestSource (Path.Combine (env.Root, "src/backend"))
+    }
+
+let doctorReport env json command (checks: Doctor.Check list) =
+    let failed =
+        checks
+        |> List.exists (fun check ->
+            match check.Status with
+            | Doctor.Fail _ -> true
+            | _ -> false
+        )
+
+    let exitCode = if failed then 1 else 0
+
+    let describe (check: Doctor.Check) =
+        match check.Status with
+        | Doctor.Pass -> "pass", None, None
+        | Doctor.Fail (problem, fix) -> "fail", Some problem, Some fix
+        | Doctor.Blocked by -> "blocked", Some $"not checked, because the {by} check failed", None
+
+    if json then
+        env.Out.WriteLine (
+            JsonSerializer.Serialize {|
+                command = command
+                checks = [
+                    for check in checks ->
+                        let status, problem, fix = describe check
+
+                        {|
+                            name = check.Name
+                            status = status
+                            problem = problem
+                            fix = fix
+                        |}
+                ]
+                exitCode = exitCode
+            |}
+        )
+    else
+        for check in checks do
+            match describe check with
+            | status, Some problem, Some fix -> env.Out.WriteLine $"{status, -8}{check.Name, -10}{problem}. {fix}"
+            | status, Some problem, None -> env.Out.WriteLine $"{status, -8}{check.Name, -10}{problem}."
+            | status, _, _ -> env.Out.WriteLine $"{status, -8}{check.Name}"
+
+    exitCode
+
 let run env argv =
     match parse argv with
     | Help None ->
@@ -414,7 +579,20 @@ let run env argv =
         | Lint -> steps [ [ formatCheck ]; [ layersStep env ] ]
         | Analyze -> steps [ [ build ]; [ analyzeStep env ] ]
         | EnvUp -> steps [ [ step env "Start Docker, then rerun." "docker compose up -d --wait" ] ]
-        | EnvDown -> steps [ [ step env "Start Docker, then rerun." "docker compose down" ] ]
+        | EnvDown (volumes, dryRun) ->
+            let flags =
+                (if dryRun then " --dry-run" else "")
+                + " down"
+                + (if volumes then " -v" else "")
+
+            let exitCode =
+                steps [ [ step env "Start Docker, then rerun." $"docker compose{flags}" ] ]
+
+            if dryRun && exitCode = 0 then
+                env.Err.WriteLine "env down: dry run, so nothing was stopped or removed. Drop --dry-run to do it."
+
+            exitCode
+        | EnvDoctor -> doctorReport env json "env doctor" (Doctor.classify (facts env))
         | Run -> steps [ [ step env runnerNeeds runner ] ]
         | Setup ->
             steps [

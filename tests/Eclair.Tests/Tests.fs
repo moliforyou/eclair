@@ -214,4 +214,13 @@ let analyzerTests =
 
 [<EntryPoint>]
 let main args =
-    runTestsWithCLIArgs [] args (testList "eclair" [ tests; analyzerTests; DoctorTests.tests ])
+    runTestsWithCLIArgs
+        []
+        args
+        (testList "eclair" [
+            tests
+            analyzerTests
+            CliTests.tests
+            DoctorTests.tests
+            DoctorTests.reportTests
+        ])
