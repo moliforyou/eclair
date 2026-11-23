@@ -16,6 +16,7 @@ type Command =
     | EnvDown of volumes: bool * dryRun: bool
     | EnvDoctor
     | Run of release: bool
+    | DbReset of dryRun: bool
     | Setup
 
 [<NoEquality; NoComparison>]
@@ -142,6 +143,22 @@ let entries = [
             function
             | [] -> Some (Run false)
             | [ "--release" ] -> Some (Run true)
+            | _ -> None
+    }
+    {
+        Name = "db"
+        Usage = "db reset [--dry-run]"
+        Summary = "Delete every game: truncate the Postgres Games table and flush Redis."
+        Details =
+            "Runs TRUNCATE games in the chess-postgres container and FLUSHALL in the chess-redis container, through docker exec, then prints how many games and keys it deleted. Both containers must be running (./eclair env up). The Runner can stay up."
+        Options = [
+            "--dry-run", "Print how many games and Redis keys reset would delete, and change nothing."
+        ]
+        Example = "./eclair db reset --dry-run"
+        Parse =
+            function
+            | [ "reset" ] -> Some (DbReset false)
+            | [ "reset"; "--dry-run" ] -> Some (DbReset true)
             | _ -> None
     }
     {

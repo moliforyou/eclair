@@ -26,4 +26,7 @@ let tests =
         parses [ "run" ] (Some (Run false, false))
         parses [ "run"; "--release" ] (Some (Run true, false))
         parses [ "run"; "--watch" ] None
+        parses [ "db"; "reset" ] (Some (DbReset false, false))
+        parses [ "db"; "reset"; "--dry-run" ] (Some (DbReset true, false))
+        parses [ "db"; "seed" ] None
     ]

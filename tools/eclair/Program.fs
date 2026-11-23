@@ -719,6 +719,94 @@ let private startRunner env json (command: string) release =
                         "the Runner did not serve port 5000 within 30 s, so eclair stopped it"
                         "Run ./eclair env doctor."
 
+let private plural count (noun: string) =
+    if count = 1 then $"1 {noun}" else $"{count} {noun}s"
+
+let private dbReset env json (command: string) dryRun =
+    let call what (exitCode, out: string, err: string) =
+        if exitCode = 0 then
+            Ok (out.Trim ())
+        else
+            Error $"{what} failed: {err.Trim ()}"
+
+    let psql sql =
+        capture env "docker" [
+            "exec"
+            "chess-postgres"
+            "psql"
+            "-U"
+            "postgres"
+            "-d"
+            "chess"
+            "-tAq"
+            "-c"
+            sql
+        ]
+        |> call "psql in chess-postgres"
+
+    let redis command =
+        capture env "docker" [ "exec"; "chess-redis"; "redis-cli"; command ]
+        |> call "redis-cli in chess-redis"
+
+    let countGames hasTable =
+        if hasTable then
+            psql "SELECT count(*) FROM games" |> Result.map int
+        else
+            Ok 0
+
+    let clear hasTable =
+        (if hasTable then psql "TRUNCATE games" else Ok "")
+        |> Result.bind (fun _ -> redis "FLUSHALL")
+
+    let outcome =
+        psql "SELECT to_regclass('games') IS NOT NULL"
+        |> Result.map ((=) "t")
+        |> Result.bind (fun hasTable ->
+            countGames hasTable
+            |> Result.bind (fun games -> redis "DBSIZE" |> Result.map (fun keys -> games, int keys))
+            |> Result.bind (fun counts ->
+                if dryRun then
+                    Ok counts
+                else
+                    clear hasTable |> Result.map (fun _ -> counts)
+            )
+        )
+
+    let fix =
+        "Run ./eclair env doctor, and ./eclair env up if Postgres or Redis is down."
+
+    if json then
+        env.Out.WriteLine (
+            JsonSerializer.Serialize {|
+                command = command
+                dryRun = dryRun
+                games = outcome |> Result.toOption |> Option.map fst
+                redisKeys = outcome |> Result.toOption |> Option.map snd
+                problem =
+                    match outcome with
+                    | Error problem -> Some problem
+                    | Ok _ -> None
+                fix = if Result.isError outcome then Some fix else None
+                exitCode = if Result.isOk outcome then 0 else 1
+            |}
+        )
+
+    match outcome with
+    | Ok (games, keys) ->
+        let counts =
+            $"""{plural games "game"} from Postgres and {plural keys "key"} from Redis"""
+
+        if not json then
+            if dryRun then
+                env.Out.WriteLine $"db reset: would delete {counts}. Dry run, so nothing changed."
+            else
+                env.Out.WriteLine $"db reset: deleted {counts}."
+
+        0
+    | Error problem ->
+        env.Err.WriteLine $"db reset: {problem}. {fix}"
+        1
+
 let run env argv =
     match parse argv with
     | Help None ->
@@ -767,6 +855,7 @@ let run env argv =
             exitCode
         | EnvDoctor -> doctorReport env json name (Doctor.classify (facts env))
         | Run release -> startRunner env json name release
+        | DbReset dryRun -> dbReset env json name dryRun
         | Setup ->
             steps [
                 [ step env "Check network access to NuGet, then rerun." "dotnet tool restore" ]
