@@ -23,4 +23,7 @@ let tests =
         parses [ "env"; "doctor" ] (Some (EnvDoctor, false))
         parses [ "env"; "doctor"; "--json" ] (Some (EnvDoctor, true))
         parses [ "env"; "doctor"; "--volumes" ] None
+        parses [ "run" ] (Some (Run false, false))
+        parses [ "run"; "--release" ] (Some (Run true, false))
+        parses [ "run"; "--watch" ] None
     ]

@@ -15,7 +15,7 @@ type Command =
     | EnvUp
     | EnvDown of volumes: bool * dryRun: bool
     | EnvDoctor
-    | Run
+    | Run of release: bool
     | Setup
 
 [<NoEquality; NoComparison>]
@@ -132,13 +132,17 @@ let entries = [
     }
     {
         Name = "run"
-        Usage = "run"
-        Summary = "Run the backend (WebApi and BackgroundWorkers) on :5000 in the foreground."
+        Usage = "run [--release]"
+        Summary = "Start the backend (WebApi and BackgroundWorkers) in the background and wait until it serves :5000."
         Details =
-            "Runs dotnet run --project src/backend/ChessPlatform.Runner. It needs Postgres and Redis, so run ./eclair env up first. Stop it with Ctrl-C."
-        Options = []
+            "Builds src/backend/ChessPlatform.Runner, starts it detached with its output in .eclair/runner.log and its pid in .eclair/runner.pid, then waits until GET http://localhost:5000/api/games/__probe answers 404. If the Runner already owns port 5000, says so and exits 0. If another process owns it, names that process and exits 1. If the Runner exits, answers anything but 404, or takes over 30 s, eclair stops it, prints the end of its log and exits 1. It needs Postgres and Redis, so run ./eclair env up first. Stop it with kill $(cat .eclair/runner.pid)."
+        Options = [ "--release", "Build and run the Release configuration instead of Debug." ]
         Example = "./eclair run"
-        Parse = noArgs Run
+        Parse =
+            function
+            | [] -> Some (Run false)
+            | [ "--release" ] -> Some (Run true)
+            | _ -> None
     }
     {
         Name = "setup"

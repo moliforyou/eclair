@@ -28,3 +28,6 @@ Thumbs.db
 .local/
 Library/
 src/backend/BackgroundWorkers/.local/
+
+# eclair run: the Runner log and pid
+.eclair/
